@@ -1,0 +1,45 @@
+name: Release Windows Installer
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on any tag starting with "v", e.g., v1.0.0, v1.0.1
+
+permissions:
+  contents: write # Grants permission to create GitHub Releases
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies & Rebuild SQLite
+        run: |
+          npm install
+          npx electron-rebuild -f -w better-sqlite3
+
+      - name: Build React UI
+        run: npm run build:react
+
+      - name: Build Electron Executable
+        run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release and Upload .exe
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
