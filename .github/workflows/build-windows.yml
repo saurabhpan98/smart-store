@@ -1,0 +1,40 @@
+name: Build Windows App (.exe)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies & Rebuild Native Modules
+        run: |
+          npm ci
+          npx electron-rebuild -f -w better-sqlite3
+
+      - name: Build React Frontend
+        run: npm run build:react
+
+      - name: Package Windows Installer
+        run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Installer as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Retail-POS-Windows-Installer
+          path: release/*.exe
+          retention-days: 7

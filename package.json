@@ -1,0 +1,52 @@
+{
+  "name": "retail-pos-inventory",
+  "version": "1.0.0",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev:react": "vite",
+    "dev:electron": "wait-on tcp:5173 && electron .",
+    "dev": "cross-env NODE_ENV=development concurrently \"npm run dev:react\" \"npm run dev:electron\"",
+    "build:react": "vite build",
+    "build:electron": "electron-builder",
+    "build": "npm run build:react && npm run build:electron"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.8.1",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "lucide-react": "^0.475.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.15.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.5.2",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.1.0",
+    "wait-on": "^8.0.2"
+  },
+  "build": {
+    "appId": "com.retail.pos",
+    "productName": "Retail POS & Inventory",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
