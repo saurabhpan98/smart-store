@@ -1,6 +1,6 @@
 // src/pages/ReorderList.jsx
 import React, { useEffect, useState } from 'react';
-import { RefreshCw, CheckCircle2, FileDown, Plus, Trash2, Check, X, AlertCircle } from 'lucide-react';
+import { RefreshCw, CheckCircle2, FileDown, Plus, Trash2, Check, X, AlertCircle, ShoppingBag } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -10,7 +10,6 @@ export default function ReorderList() {
   const [categories, setCategories] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Full item form for custom reorder item
   const [formData, setFormData] = useState({
     item_name: '',
     category_id: '',
@@ -84,7 +83,6 @@ export default function ReorderList() {
     });
   };
 
-  // Transfer item from todo list directly into stock inventory
   const handleMarkAsReceived = async (orderId) => {
     if (confirm('Mark this item as received? It will be added into your active Inventory Stock.')) {
       if (window.api.orders?.moveToInventory) {
@@ -149,14 +147,21 @@ export default function ReorderList() {
     doc.save(`Reorder_List_${Date.now()}.pdf`);
   };
 
+  const totalToOrderItems = lowStockItems.length + customOrders.length;
+
   return (
     <div className="p-6 bg-slate-50 h-full flex flex-col space-y-4">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">To-Order Purchase List</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-slate-800">To-Order Purchase List</h1>
+            <span className="px-3 py-1 bg-amber-100 text-amber-800 font-bold rounded-full text-xs">
+              Total Pending: {totalToOrderItems} Items
+            </span>
+          </div>
           <p className="text-sm text-slate-500">
-            Low-stock alerts and items needed from vendors. Mark received items to add them into Inventory.
+            Track low-stock items and custom vendor orders. Mark received items to add them into Inventory.
           </p>
         </div>
         <div className="flex gap-2">
@@ -183,6 +188,7 @@ export default function ReorderList() {
         <table className="w-full text-left text-sm text-slate-600">
           <thead className="bg-slate-100 text-xs uppercase text-slate-500 sticky top-0">
             <tr>
+              <th className="p-3 text-center w-12">#</th>
               <th className="p-3">Product / Item Name</th>
               <th className="p-3">Category</th>
               <th className="p-3">Type</th>
@@ -191,9 +197,9 @@ export default function ReorderList() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {lowStockItems.length === 0 && customOrders.length === 0 ? (
+            {totalToOrderItems === 0 ? (
               <tr>
-                <td colSpan="5" className="p-8 text-center text-slate-400">
+                <td colSpan="6" className="p-8 text-center text-slate-400">
                   <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
                   All inventory healthy. No pending reorder items.
                 </td>
@@ -201,8 +207,9 @@ export default function ReorderList() {
             ) : (
               <>
                 {/* 1. Low stock auto items */}
-                {lowStockItems.map((item) => (
+                {lowStockItems.map((item, idx) => (
                   <tr key={`auto-${item.id}`} className="hover:bg-slate-50">
+                    <td className="p-3 text-center text-xs font-semibold text-slate-400">{idx + 1}</td>
                     <td className="p-3 font-semibold text-slate-900 flex items-center gap-2">
                       <AlertCircle className="h-4 w-4 text-amber-500 inline shrink-0" />
                       {item.name}
@@ -221,8 +228,9 @@ export default function ReorderList() {
                 ))}
 
                 {/* 2. Custom manual orders */}
-                {customOrders.map((order) => (
+                {customOrders.map((order, idx) => (
                   <tr key={`custom-${order.id}`} className="hover:bg-slate-50">
+                    <td className="p-3 text-center text-xs font-semibold text-slate-400">{lowStockItems.length + idx + 1}</td>
                     <td className="p-3 font-semibold text-slate-900">{order.item_name}</td>
                     <td className="p-3 text-slate-500">{order.category_name || 'General'}</td>
                     <td className="p-3">
@@ -255,7 +263,7 @@ export default function ReorderList() {
         </table>
       </div>
 
-      {/* --- ADD CUSTOM ITEM MODAL (Full Specifications) --- */}
+      {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-4">
           <form
@@ -280,7 +288,7 @@ export default function ReorderList() {
                   required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="e.g., Basmati Rice 5kg"
-                  value={formData.item_name}
+                  value={formData.item_name || ''}
                   onChange={(e) => setFormData({ ...formData, item_name: e.target.value })}
                 />
               </div>
@@ -289,7 +297,7 @@ export default function ReorderList() {
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Category</label>
                 <select
                   className="w-full border p-2 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.category_id}
+                  value={formData.category_id || ''}
                   onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                 >
                   <option value="">General / None</option>
@@ -304,7 +312,7 @@ export default function ReorderList() {
                 <input
                   className="w-full border p-2 rounded-lg font-mono text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="Scan or enter code"
-                  value={formData.sku_barcode}
+                  value={formData.sku_barcode || ''}
                   onChange={(e) => setFormData({ ...formData, sku_barcode: e.target.value })}
                 />
               </div>
@@ -315,7 +323,8 @@ export default function ReorderList() {
                   type="number"
                   step="any"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.cost_price}
+                  value={formData.cost_price || ''}
+                  placeholder="0"
                   onChange={(e) => setFormData({ ...formData, cost_price: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -327,7 +336,8 @@ export default function ReorderList() {
                   type="number"
                   step="any"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-semibold text-slate-900"
-                  value={formData.selling_price}
+                  value={formData.selling_price || ''}
+                  placeholder="0"
                   onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -338,7 +348,8 @@ export default function ReorderList() {
                   type="number"
                   min="1"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.suggested_qty}
+                  value={formData.suggested_qty || ''}
+                  placeholder="1"
                   onChange={(e) => setFormData({ ...formData, suggested_qty: parseFloat(e.target.value) || 1 })}
                 />
               </div>
@@ -348,7 +359,7 @@ export default function ReorderList() {
                 <input
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="pcs, kg, packet, litre"
-                  value={formData.unit}
+                  value={formData.unit || ''}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                 />
               </div>
@@ -358,7 +369,8 @@ export default function ReorderList() {
                 <input
                   type="number"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.low_stock_threshold}
+                  value={formData.low_stock_threshold || ''}
+                  placeholder="5"
                   onChange={(e) => setFormData({ ...formData, low_stock_threshold: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -368,7 +380,8 @@ export default function ReorderList() {
                 <input
                   type="number"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.tax_rate}
+                  value={formData.tax_rate || ''}
+                  placeholder="0"
                   onChange={(e) => setFormData({ ...formData, tax_rate: parseFloat(e.target.value) || 0 })}
                 />
               </div>

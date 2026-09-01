@@ -267,3 +267,20 @@ ipcMain.handle('shell:openExternal', async (_, url) => {
   await shell.openExternal(url);
   return { success: true };
 });
+
+
+ipcMain.handle('auth:changeCredentials', async (_, { currentPassword, newUsername, newPassword }) => {
+  const adminUser = dbInstance.prepare('SELECT * FROM users WHERE role = ? LIMIT 1').get('admin');
+  if (!adminUser) return { success: false, message: 'Admin user not found' };
+
+  const valid = bcrypt.compareSync(currentPassword, adminUser.password_hash);
+  if (!valid) {
+    return { success: false, message: 'Current password is incorrect' };
+  }
+
+  const newHash = bcrypt.hashSync(newPassword, 10);
+  dbInstance.prepare('UPDATE users SET username = ?, password_hash = ? WHERE id = ?')
+    .run(newUsername, newHash, adminUser.id);
+
+  return { success: true, message: 'Credentials updated successfully' };
+});

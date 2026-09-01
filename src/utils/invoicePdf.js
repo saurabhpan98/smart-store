@@ -11,7 +11,7 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
 
   const doc = new jsPDF({
     unit: 'mm',
-    format: [80, 230]
+    format: [80, 240]
   });
 
   // Header Title
@@ -50,9 +50,15 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
     currentY += 3.5;
   }
 
+  // Payment Mode Indication
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Payment Mode: ${invoice.payment_mode || 'CASH'}`, 4, currentY);
+  doc.setFont('helvetica', 'normal');
+  currentY += 3.5;
+
   // Items Table
-  const tableRows = invoice.items.map((item) => [
-    item.name,
+  const tableRows = invoice.items.map((item, idx) => [
+    `${idx + 1}. ${item.name}`,
     item.qty,
     item.selling_price,
     item.discount ? `-Rs.${item.discount}` : '0',
@@ -87,9 +93,12 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
   doc.text(`Grand Total:`, 4, finalY + 16);
   doc.text(`Rs. ${invoice.grand_total.toFixed(2)}`, 76, finalY + 16, { align: 'right' });
 
+  doc.setFontSize(8);
+  doc.text(`Paid Via: ${invoice.payment_mode || 'CASH'}`, 4, finalY + 20.5);
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
-  doc.text(footerNote, 40, finalY + 22, { align: 'center' });
+  doc.text(footerNote, 40, finalY + 26, { align: 'center' });
 
   doc.save(`${invoice.invoice_number}.pdf`);
 }

@@ -1,6 +1,6 @@
 // src/pages/POS.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Trash2, ShoppingCart, Send, FileDown, Plus, Package, CheckCircle2, Percent, IndianRupee, Tag } from 'lucide-react';
+import { Search, Trash2, ShoppingCart, Send, FileDown, Plus, Package, CheckCircle2, Tag, AlertCircle } from 'lucide-react';
 import { sendWhatsAppInvoice } from '../utils/whatsapp';
 import { generateInvoicePDF } from '../utils/invoicePdf';
 
@@ -10,13 +10,15 @@ export default function POS() {
   const [search, setSearch] = useState('');
   const [customer, setCustomer] = useState({ name: '', phone: '' });
   
-  // Overall Bill Discount State
-  const [billDiscountType, setBillDiscountType] = useState('amount'); // 'amount' | 'percent'
+  const [billDiscountType, setBillDiscountType] = useState('amount');
   const [billDiscountValue, setBillDiscountValue] = useState(0);
   
   const [paymentMode, setPaymentMode] = useState('CASH');
   const [storeSettings, setStoreSettings] = useState({});
+  const [feedback, setFeedback] = useState({ message: '', type: '' });
+
   const barcodeInputRef = useRef(null);
+  const phoneInputRef = useRef(null);
 
   useEffect(() => {
     loadInventory();
@@ -24,12 +26,17 @@ export default function POS() {
     if (barcodeInputRef.current) barcodeInputRef.current.focus();
   }, []);
 
+  const showNotice = (message, type = 'error') => {
+    setFeedback({ message, type });
+    setTimeout(() => setFeedback({ message: '', type: '' }), 4000);
+  };
+
   const loadInventory = async () => {
     try {
       const data = await window.api.inventory.getAll();
       setItems(data || []);
     } catch (err) {
-      console.error('Failed to load inventory items:', err);
+      console.error(err);
     }
   };
 
@@ -38,7 +45,7 @@ export default function POS() {
       const data = await window.api?.settings?.get();
       if (data) setStoreSettings(data);
     } catch (err) {
-      console.error('Settings load error:', err);
+      console.error(err);
     }
   };
 
@@ -67,13 +74,13 @@ export default function POS() {
 
   const addToCart = (product) => {
     if (product.stock_qty <= 0) {
-      alert('This item is currently out of stock.');
+      showNotice('This item is currently out of stock.');
       return;
     }
     const existing = cart.find((i) => i.id === product.id);
     if (existing) {
       if (existing.qty + 1 > product.stock_qty) {
-        alert(`Cannot exceed available stock of ${product.stock_qty} ${product.unit || 'pcs'}.`);
+        showNotice(`Cannot exceed available stock of ${product.stock_qty} ${product.unit || 'pcs'}.`);
         return;
       }
       const newQty = existing.qty + 1;
@@ -99,7 +106,7 @@ export default function POS() {
   const updateCartQty = (id, newQty) => {
     const product = items.find((i) => i.id === id);
     if (product && newQty > product.stock_qty) {
-      alert(`Max available stock: ${product.stock_qty} ${product.unit || 'pcs'}`);
+      showNotice(`Max available stock: ${product.stock_qty} ${product.unit || 'pcs'}`);
       return;
     }
     if (newQty <= 0) {
@@ -133,12 +140,11 @@ export default function POS() {
     );
   };
 
-  // Totals calculations
+  // Calculations
   const rawSubtotal = cart.reduce((acc, curr) => acc + (curr.qty * curr.selling_price), 0);
   const itemsDiscountSum = cart.reduce((acc, curr) => acc + (curr.discount || 0), 0);
   const cartSubtotal = cart.reduce((acc, curr) => acc + curr.line_total, 0);
 
-  // Bill discount calculation
   let overallBillDiscount = 0;
   if (billDiscountType === 'percent') {
     overallBillDiscount = (cartSubtotal * (parseFloat(billDiscountValue) || 0)) / 100;
@@ -150,12 +156,11 @@ export default function POS() {
   const totalTax = cart.reduce((acc, curr) => acc + (curr.tax * curr.qty), 0);
   const grandTotal = Math.max(0, cartSubtotal + totalTax - overallBillDiscount);
 
-  // Generate payload for PDF / WhatsApp / Done
   const getInvoicePayload = () => {
     return {
       invoice_number: `INV-${Date.now().toString().slice(-6)}`,
-      customer_name: customer.name,
-      customer_phone: customer.phone,
+      customer_name: customer.name || '',
+      customer_phone: customer.phone || '',
       subtotal: rawSubtotal,
       discount_total: totalDiscount,
       tax_total: totalTax,
@@ -165,34 +170,34 @@ export default function POS() {
     };
   };
 
-  // 1. Generate & Download PDF (Without completing order)
   const handleDownloadPDF = () => {
     if (cart.length === 0) {
-      alert('Add items to cart to generate invoice PDF.');
+      showNotice('Add items to cart to generate invoice PDF.');
       return;
     }
     const invoicePayload = getInvoicePayload();
     generateInvoicePDF(invoicePayload, storeSettings);
+    showNotice('Invoice PDF downloaded!', 'success');
   };
 
-  // 2. Open WhatsApp Web (Without completing order)
   const handleSendWhatsApp = () => {
     if (cart.length === 0) {
-      alert('Add items to cart first.');
+      showNotice('Add items to cart first.');
       return;
     }
-    if (!customer.phone) {
-      alert('Please enter a customer WhatsApp number.');
+    if (!customer.phone.trim()) {
+      showNotice('Please enter customer WhatsApp phone number.');
+      if (phoneInputRef.current) phoneInputRef.current.focus();
       return;
     }
     const invoicePayload = getInvoicePayload();
     sendWhatsAppInvoice(customer.phone, invoicePayload, storeSettings.shop_name);
+    showNotice('Opening WhatsApp in browser...', 'success');
   };
 
-  // 3. Complete Checkout (Deduct stock and save)
   const handleDoneCheckout = async () => {
     if (cart.length === 0) {
-      alert('Cart is empty. Please add items to bill.');
+      showNotice('Cart is empty. Please add items to bill.');
       return;
     }
 
@@ -201,17 +206,16 @@ export default function POS() {
     try {
       const res = await window.api.pos.checkout(invoicePayload);
       if (res.success) {
-        alert(`Order Completed! Invoice #${invoicePayload.invoice_number}`);
+        showNotice(`Order Completed! Inv #${invoicePayload.invoice_number}`, 'success');
         setCart([]);
         setCustomer({ name: '', phone: '' });
         setBillDiscountValue(0);
         loadInventory();
       } else {
-        alert('Checkout Failed: ' + (res.error || 'Database error'));
+        showNotice('Checkout Failed: ' + (res.error || 'Database error'));
       }
     } catch (err) {
-      console.error(err);
-      alert('Error processing transaction.');
+      showNotice('Error processing transaction.');
     }
   };
 
@@ -226,25 +230,29 @@ export default function POS() {
     <div className="flex h-screen w-full gap-4 p-4 bg-slate-100 overflow-hidden box-border">
       {/* Left Pane: Items List View */}
       <div className="flex-1 flex flex-col bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-white">
-          <div className="relative">
+        <div className="p-4 border-b border-slate-100 bg-white flex justify-between items-center gap-4">
+          <div className="relative flex-1">
             <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
             <input
               ref={barcodeInputRef}
               type="text"
               className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition"
               placeholder="Search by Item Name, Category, or Scan Barcode..."
-              value={search}
+              value={search || ''}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={handleBarcodeOrSearch}
             />
           </div>
+          <span className="text-xs font-semibold px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg whitespace-nowrap">
+            Total Stock: {items.length} Items
+          </span>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           <table className="w-full text-left text-sm text-slate-600">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500 sticky top-0 border-b z-10">
               <tr>
+                <th className="py-2.5 px-3 text-center w-12">#</th>
                 <th className="py-2.5 px-4">Item Name</th>
                 <th className="py-2.5 px-4">Category</th>
                 <th className="py-2.5 px-4">Barcode / SKU</th>
@@ -256,13 +264,13 @@ export default function POS() {
             <tbody className="divide-y divide-slate-100">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="py-12 text-center text-slate-400">
+                  <td colSpan="7" className="py-12 text-center text-slate-400">
                     <Package className="h-8 w-8 mx-auto mb-2 text-slate-300" />
                     No items found matching "{search}"
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => {
+                filteredItems.map((item, idx) => {
                   const isLowStock = item.stock_qty <= item.low_stock_threshold;
                   const isOutOfStock = item.stock_qty <= 0;
 
@@ -274,6 +282,7 @@ export default function POS() {
                         isOutOfStock ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''
                       }`}
                     >
+                      <td className="py-3 px-3 text-center text-xs font-semibold text-slate-400">{idx + 1}</td>
                       <td className="py-3 px-4 font-medium text-slate-900">{item.name}</td>
                       <td className="py-3 px-4">
                         <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
@@ -318,9 +327,19 @@ export default function POS() {
 
       {/* Right Pane: Cart & Invoice Checkout */}
       <div className="w-[420px] flex flex-col bg-white rounded-xl shadow-xs border border-slate-200 p-4 h-full">
-        <h3 className="font-bold text-base flex items-center gap-2 mb-3 text-slate-800 pb-2 border-b">
+        <h3 className="font-bold text-base flex items-center gap-2 mb-2 text-slate-800 pb-2 border-b">
           <ShoppingCart className="h-5 w-5 text-indigo-600" /> Current Bill
         </h3>
+
+        {/* Feedback Alert Toast */}
+        {feedback.message && (
+          <div className={`mb-2 p-2 rounded-lg text-xs font-medium flex items-center gap-1.5 ${
+            feedback.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+          }`}>
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {feedback.message}
+          </div>
+        )}
 
         {/* Customer Information */}
         <div className="space-y-2 mb-3">
@@ -328,14 +347,15 @@ export default function POS() {
             type="text"
             placeholder="Customer Name (Optional)"
             className="w-full text-xs border border-slate-200 p-2 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none"
-            value={customer.name}
+            value={customer.name || ''}
             onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
           />
           <input
+            ref={phoneInputRef}
             type="text"
             placeholder="WhatsApp Number (e.g., 9876543210)"
-            className="w-full text-xs border border-slate-200 p-2 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none"
-            value={customer.phone}
+            className="w-full text-xs border border-slate-200 p-2 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none font-medium"
+            value={customer.phone || ''}
             onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}
           />
         </div>
@@ -348,14 +368,14 @@ export default function POS() {
               Your cart is empty
             </div>
           ) : (
-            cart.map((item) => (
+            cart.map((item, idx) => (
               <div
                 key={item.id}
                 className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 space-y-1.5"
               >
                 <div className="flex justify-between items-center text-xs">
                   <div className="flex-1 min-w-0 pr-2">
-                    <p className="font-semibold text-slate-800 truncate">{item.name}</p>
+                    <p className="font-semibold text-slate-800 truncate">{idx + 1}. {item.name}</p>
                     <span className="text-[11px] text-slate-500">₹{item.selling_price} each</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -363,7 +383,7 @@ export default function POS() {
                       type="number"
                       min="1"
                       className="w-12 border border-slate-300 rounded text-center py-0.5 text-xs font-medium bg-white"
-                      value={item.qty}
+                      value={item.qty || 1}
                       onChange={(e) => updateCartQty(item.id, parseInt(e.target.value) || 0)}
                     />
                     <span className="font-bold text-slate-900 w-16 text-right">
@@ -420,7 +440,6 @@ export default function POS() {
             <span>₹{rawSubtotal.toFixed(2)}</span>
           </div>
 
-          {/* Overall Bill Discount */}
           <div className="flex justify-between items-center text-slate-600 py-1">
             <span className="font-medium">Bill Discount:</span>
             <div className="flex items-center gap-1">
@@ -475,7 +494,7 @@ export default function POS() {
                 onClick={() => setPaymentMode(mode)}
                 className={`py-1 text-xs font-semibold rounded-md border transition ${
                   paymentMode === mode
-                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
                     : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -490,7 +509,6 @@ export default function POS() {
               type="button"
               onClick={handleDoneCheckout}
               className="flex justify-center items-center gap-1 bg-indigo-600 text-white py-2 rounded-lg text-xs font-semibold hover:bg-indigo-700 transition shadow-xs"
-              title="Complete order and deduct stock"
             >
               <CheckCircle2 className="h-3.5 w-3.5" /> Done
             </button>
@@ -498,7 +516,6 @@ export default function POS() {
               type="button"
               onClick={handleDownloadPDF}
               className="flex justify-center items-center gap-1 bg-slate-900 text-white py-2 rounded-lg text-xs font-semibold hover:bg-slate-800 transition shadow-xs"
-              title="Download PDF without completing"
             >
               <FileDown className="h-3.5 w-3.5" /> PDF
             </button>
@@ -506,7 +523,6 @@ export default function POS() {
               type="button"
               onClick={handleSendWhatsApp}
               className="flex justify-center items-center gap-1 bg-emerald-600 text-white py-2 rounded-lg text-xs font-semibold hover:bg-emerald-700 transition shadow-xs"
-              title="Send WhatsApp without completing"
             >
               <Send className="h-3.5 w-3.5" /> WhatsApp
             </button>

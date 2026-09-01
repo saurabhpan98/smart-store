@@ -1,12 +1,11 @@
 // src/pages/Inventory.jsx
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, AlertTriangle, FolderPlus, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, AlertTriangle, FolderPlus, X, Package } from 'lucide-react';
 
 export default function Inventory() {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
   
-  // Item Modal State
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     id: null,
@@ -21,12 +20,8 @@ export default function Inventory() {
     unit: 'pcs'
   });
 
-  // Category Modal State
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
-  const [catFormData, setCatFormData] = useState({
-    name: '',
-    description: ''
-  });
+  const [catFormData, setCatFormData] = useState({ name: '', description: '' });
   const [catError, setCatError] = useState('');
 
   useEffect(() => {
@@ -42,11 +37,10 @@ export default function Inventory() {
       setItems(fetchedItems || []);
       setCategories(fetchedCategories || []);
     } catch (err) {
-      console.error('Error loading inventory data:', err);
+      console.error(err);
     }
   };
 
-  // --- ITEM HANDLERS ---
   const handleItemSubmit = async (e) => {
     e.preventDefault();
     const payload = {
@@ -67,10 +61,7 @@ export default function Inventory() {
   };
 
   const handleEditItem = (item) => {
-    setFormData({
-      ...item,
-      category_id: item.category_id || ''
-    });
+    setFormData({ ...item, category_id: item.category_id || '' });
     setIsItemModalOpen(true);
   };
 
@@ -89,7 +80,6 @@ export default function Inventory() {
     });
   };
 
-  // --- CATEGORY HANDLERS ---
   const handleCategorySubmit = async (e) => {
     e.preventDefault();
     setCatError('');
@@ -97,7 +87,6 @@ export default function Inventory() {
       setCatError('Category name is required.');
       return;
     }
-
     try {
       const res = await window.api.categories.create(catFormData);
       if (res.success) {
@@ -105,7 +94,7 @@ export default function Inventory() {
         setCatFormData({ name: '', description: '' });
         await loadData();
       } else {
-        setCatError(res.error || 'Failed to add category. Name might already exist.');
+        setCatError(res.error || 'Failed to add category.');
       }
     } catch (err) {
       setCatError('Error creating category.');
@@ -117,8 +106,13 @@ export default function Inventory() {
       {/* Header Actions */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Inventory Stock</h1>
-          <p className="text-sm text-slate-500">Manage products, categories, pricing, and stock thresholds.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-slate-800">Inventory Stock</h1>
+            <span className="px-3 py-1 bg-indigo-100 text-indigo-700 font-bold rounded-full text-xs">
+              Total: {items.length} Products
+            </span>
+          </div>
+          <p className="text-sm text-slate-500">Manage stock, categories, prices and low-stock alerts.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -141,6 +135,7 @@ export default function Inventory() {
         <table className="w-full text-left text-sm text-slate-600">
           <thead className="bg-slate-100 text-xs uppercase text-slate-500 sticky top-0">
             <tr>
+              <th className="p-3 text-center w-12">#</th>
               <th className="p-3">Item Name</th>
               <th className="p-3">Barcode / SKU</th>
               <th className="p-3">Category</th>
@@ -153,18 +148,20 @@ export default function Inventory() {
           <tbody className="divide-y divide-slate-100">
             {items.length === 0 ? (
               <tr>
-                <td colSpan="7" className="p-8 text-center text-slate-400">
+                <td colSpan="8" className="p-8 text-center text-slate-400">
+                  <Package className="h-8 w-8 mx-auto mb-2 text-slate-300" />
                   No products in inventory yet. Click <b>"Add New Item"</b> to begin.
                 </td>
               </tr>
             ) : (
-              items.map((item) => (
+              items.map((item, idx) => (
                 <tr key={item.id} className="hover:bg-slate-50 transition">
+                  <td className="p-3 text-center text-xs font-semibold text-slate-400">{idx + 1}</td>
                   <td className="p-3 font-medium text-slate-900">{item.name}</td>
                   <td className="p-3 font-mono text-xs text-slate-500">{item.sku_barcode || '—'}</td>
                   <td className="p-3">
                     <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs">
-                      {item.category_name || 'General / None'}
+                      {item.category_name || 'General'}
                     </span>
                   </td>
                   <td className="p-3 text-slate-500">₹{item.cost_price}</td>
@@ -174,7 +171,7 @@ export default function Inventory() {
                       item.stock_qty <= item.low_stock_threshold ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
                     }`}>
                       {item.stock_qty <= item.low_stock_threshold && <AlertTriangle className="h-3 w-3" />}
-                      {item.stock_qty} {item.unit}
+                      {item.stock_qty} {item.unit || 'pcs'}
                     </span>
                   </td>
                   <td className="p-3 text-right space-x-2">
@@ -192,7 +189,7 @@ export default function Inventory() {
         </table>
       </div>
 
-      {/* --- ADD/EDIT ITEM MODAL --- */}
+      {/* Item Modal */}
       {isItemModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex justify-center items-center z-50 p-4">
           <form onSubmit={handleItemSubmit} className="bg-white p-6 rounded-xl w-[520px] shadow-2xl space-y-4 border border-slate-100">
@@ -210,7 +207,7 @@ export default function Inventory() {
                   required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="e.g., Basmati Rice 5kg"
-                  value={formData.name}
+                  value={formData.name || ''}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
               </div>
@@ -228,7 +225,7 @@ export default function Inventory() {
                 </div>
                 <select
                   className="w-full border p-2 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.category_id}
+                  value={formData.category_id || ''}
                   onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                 >
                   <option value="">General / None</option>
@@ -243,7 +240,7 @@ export default function Inventory() {
                 <input
                   className="w-full border p-2 rounded-lg font-mono text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="Scan or enter code"
-                  value={formData.sku_barcode}
+                  value={formData.sku_barcode || ''}
                   onChange={(e) => setFormData({ ...formData, sku_barcode: e.target.value })}
                 />
               </div>
@@ -254,7 +251,8 @@ export default function Inventory() {
                   type="number"
                   step="any"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.cost_price}
+                  value={formData.cost_price || ''}
+                  placeholder="0"
                   onChange={(e) => setFormData({ ...formData, cost_price: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -266,7 +264,8 @@ export default function Inventory() {
                   type="number"
                   step="any"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-semibold text-slate-900"
-                  value={formData.selling_price}
+                  value={formData.selling_price || ''}
+                  placeholder="0"
                   onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -276,7 +275,8 @@ export default function Inventory() {
                 <input
                   type="number"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.stock_qty}
+                  value={formData.stock_qty || ''}
+                  placeholder="0"
                   onChange={(e) => setFormData({ ...formData, stock_qty: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -286,7 +286,7 @@ export default function Inventory() {
                 <input
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="pcs, kg, packet, litre"
-                  value={formData.unit}
+                  value={formData.unit || ''}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                 />
               </div>
@@ -296,7 +296,8 @@ export default function Inventory() {
                 <input
                   type="number"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.low_stock_threshold}
+                  value={formData.low_stock_threshold || ''}
+                  placeholder="5"
                   onChange={(e) => setFormData({ ...formData, low_stock_threshold: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -306,7 +307,8 @@ export default function Inventory() {
                 <input
                   type="number"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.tax_rate}
+                  value={formData.tax_rate || ''}
+                  placeholder="0"
                   onChange={(e) => setFormData({ ...formData, tax_rate: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -331,7 +333,7 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* --- ADD CATEGORY MODAL --- */}
+      {/* Category Modal */}
       {isCatModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-4">
           <form onSubmit={handleCategorySubmit} className="bg-white p-6 rounded-xl w-96 shadow-2xl space-y-4 border border-slate-100">
@@ -354,9 +356,9 @@ export default function Inventory() {
                 <input
                   required
                   type="text"
-                  placeholder="e.g., Grocery, Snacks, Dairy, Electronics"
+                  placeholder="e.g., Grocery, Cosmetics, Dairy"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={catFormData.name}
+                  value={catFormData.name || ''}
                   onChange={(e) => setCatFormData({ ...catFormData, name: e.target.value })}
                 />
               </div>
@@ -367,7 +369,7 @@ export default function Inventory() {
                   rows="2"
                   placeholder="Short description..."
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={catFormData.description}
+                  value={catFormData.description || ''}
                   onChange={(e) => setCatFormData({ ...catFormData, description: e.target.value })}
                 />
               </div>

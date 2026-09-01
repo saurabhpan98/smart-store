@@ -1,6 +1,6 @@
 // src/pages/Settings.jsx
 import React, { useState, useEffect } from 'react';
-import { Store, Save, CheckCircle2 } from 'lucide-react';
+import { Store, Save, CheckCircle2, ShieldCheck, KeyRound, AlertCircle } from 'lucide-react';
 
 export default function Settings({ onSettingsUpdated }) {
   const [settings, setSettings] = useState({
@@ -12,6 +12,15 @@ export default function Settings({ onSettingsUpdated }) {
     receipt_footer: ''
   });
   const [saved, setSaved] = useState(false);
+
+  // Admin Credentials State
+  const [credForm, setCredForm] = useState({
+    currentPassword: '',
+    newUsername: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [credStatus, setCredStatus] = useState({ message: '', type: '' });
 
   useEffect(() => {
     loadSettings();
@@ -26,7 +35,7 @@ export default function Settings({ onSettingsUpdated }) {
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSettingsSubmit = async (e) => {
     e.preventDefault();
     await window.api.settings.update(settings);
     setSaved(true);
@@ -34,16 +43,44 @@ export default function Settings({ onSettingsUpdated }) {
     setTimeout(() => setSaved(false), 3000);
   };
 
+  const handleCredentialsSubmit = async (e) => {
+    e.preventDefault();
+    setCredStatus({ message: '', type: '' });
+
+    if (credForm.newPassword !== credForm.confirmPassword) {
+      setCredStatus({ message: 'New passwords do not match!', type: 'error' });
+      return;
+    }
+
+    try {
+      const res = await window.api.auth.changeCredentials({
+        currentPassword: credForm.currentPassword,
+        newUsername: credForm.newUsername,
+        newPassword: credForm.newPassword
+      });
+
+      if (res.success) {
+        setCredStatus({ message: 'Admin username and password updated successfully!', type: 'success' });
+        setCredForm({ currentPassword: '', newUsername: '', newPassword: '', confirmPassword: '' });
+      } else {
+        setCredStatus({ message: res.message || 'Failed to update credentials', type: 'error' });
+      }
+    } catch (err) {
+      setCredStatus({ message: 'Error updating credentials', type: 'error' });
+    }
+  };
+
   return (
-    <div className="p-6 bg-slate-50 h-full overflow-y-auto">
-      <div className="max-w-2xl bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-6">
+    <div className="p-6 bg-slate-50 h-full overflow-y-auto space-y-6">
+      {/* 1. Store Profile Settings */}
+      <div className="max-w-3xl bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-6">
         <div className="flex items-center gap-3 border-b pb-4">
           <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg">
             <Store className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-800">Store Profile & Settings</h1>
-            <p className="text-xs text-slate-500">Configure your shop name and details displayed on bills.</p>
+            <p className="text-xs text-slate-500">Configure your shop name and details displayed on bills & receipts.</p>
           </div>
         </div>
 
@@ -53,7 +90,7 @@ export default function Settings({ onSettingsUpdated }) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+        <form onSubmit={handleSettingsSubmit} className="space-y-4 text-sm">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Shop / Store Name *</label>
@@ -123,6 +160,88 @@ export default function Settings({ onSettingsUpdated }) {
               className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition"
             >
               <Save className="h-4 w-4" /> Save Store Settings
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* 2. Admin Username & Password Change */}
+      <div className="max-w-3xl bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-6">
+        <div className="flex items-center gap-3 border-b pb-4">
+          <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg">
+            <ShieldCheck className="h-6 w-6" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">Admin Login Security</h2>
+            <p className="text-xs text-slate-500">Update your store login username and access password.</p>
+          </div>
+        </div>
+
+        {credStatus.message && (
+          <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${
+            credStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+          }`}>
+            {credStatus.type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+            {credStatus.message}
+          </div>
+        )}
+
+        <form onSubmit={handleCredentialsSubmit} className="space-y-4 text-sm">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Current Password *</label>
+            <input
+              required
+              type="password"
+              placeholder="Enter current password to verify"
+              className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={credForm.currentPassword}
+              onChange={(e) => setCredForm({ ...credForm, currentPassword: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">New Username *</label>
+              <input
+                required
+                type="text"
+                placeholder="e.g. admin or store_manager"
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                value={credForm.newUsername}
+                onChange={(e) => setCredForm({ ...credForm, newUsername: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">New Password *</label>
+              <input
+                required
+                type="password"
+                placeholder="••••••••"
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                value={credForm.newPassword}
+                onChange={(e) => setCredForm({ ...credForm, newPassword: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Confirm New Password *</label>
+            <input
+              required
+              type="password"
+              placeholder="••••••••"
+              className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={credForm.confirmPassword}
+              onChange={(e) => setCredForm({ ...credForm, confirmPassword: e.target.value })}
+            />
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-slate-800 transition"
+            >
+              <KeyRound className="h-4 w-4" /> Update Admin Credentials
             </button>
           </div>
         </form>

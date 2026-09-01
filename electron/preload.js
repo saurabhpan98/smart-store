@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   auth: {
     login: (creds) => ipcRenderer.invoke('auth:login', creds),
+    changeCredentials: (data) => ipcRenderer.invoke('auth:changeCredentials', data),
   },
   inventory: {
     getAll: () => ipcRenderer.invoke('inventory:getAll'),
