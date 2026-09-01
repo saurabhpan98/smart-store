@@ -47,29 +47,37 @@ inventory-app/
 ├── .github/
 │   └── workflows/
 │       └── release-windows.yml   # Automated GitHub Actions Windows .exe builder
+├── certs/                        # (Optional) Self-signed or code-signing certificates
+│   └── pos_cert.pfx              # Windows code signing certificate
 ├── electron/
-│   ├── db.js                     # SQLite schema initialization & connection
+│   ├── db.js                     # SQLite schema (Tables: Users, Items, Orders, Settings)
 │   ├── main.js                   # Electron main process & IPC handlers
 │   └── preload.js                # Secure ContextBridge API exposure
+├── public/                       # Static app assets & executable icons
+│   ├── icon.ico                  # Windows app & setup installer icon
+│   ├── icon.png                  # High-resolution PNG app icon
+│   └── icon.svg                  # Vector SVG application logo
 ├── src/
 │   ├── components/
 │   │   ├── InvoiceModal.jsx      # Order summary & receipt preview modal
-│   │   ├── Sidebar.jsx           # Application navigation sidebar
+│   │   ├── Sidebar.jsx           # Sidebar navigation (with Shop Name & Settings link)
 │   │   └── StatCard.jsx          # Analytics metric card
 │   ├── pages/
 │   │   ├── Analytics.jsx         # Sales dashboard & Recharts visualization
-│   │   ├── Inventory.jsx         # Products & stock management
+│   │   ├── Inventory.jsx         # Stock management & Add Category modal
 │   │   ├── Login.jsx             # Admin authentication portal
-│   │   ├── POS.jsx               # Main billing, barcode & cart screen
-│   │   └── ReorderList.jsx       # Vendor procurement list
+│   │   ├── POS.jsx               # Table list billing, barcode, Cart, PDF, WhatsApp & Done
+│   │   ├── ReorderList.jsx       # Vendor list with custom item addition
+│   │   └── Settings.jsx          # Shop name, owner details, GSTIN & receipt setup
 │   ├── utils/
 │   │   ├── invoicePdf.js         # Thermal receipt PDF generator
-│   │   └── whatsapp.js          # WhatsApp invoice link generator
-│   ├── App.jsx                   # Tab routing & session state
-│   ├── index.css                 # Tailwind CSS entry directives
-│   └── main.jsx                  # React DOM mount & browser fallback mocks
+│   │   └── whatsapp.js           # WhatsApp invoice link generator
+│   ├── App.jsx                   # Tab routing, session state & global shop name state
+│   ├── index.css                 # Tailwind CSS entry directives & input focus fixes
+│   └── main.jsx                  # React DOM mount & updated browser fallback mocks
 ├── index.html                    # Root HTML template
-├── package.json                  # Dependencies & electron-builder configuration
+├── package.json                  # App metadata, dependencies & electron-builder config
+├── package-lock.json             # Exact dependency tree lockfile for GitHub Actions
 ├── postcss.config.js             # PostCSS Tailwind plugins
 ├── tailwind.config.js            # Tailwind CSS content paths
 └── vite.config.js                # Vite build configuration (base: './')
