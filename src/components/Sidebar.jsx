@@ -1,5 +1,6 @@
+// src/components/Sidebar.jsx
 import React from 'react';
-import { ShoppingCart, Package, ShoppingBag, BarChart3, Settings as SettingsIcon, LogOut, Store, ShieldCheck } from 'lucide-react';
+import { ShoppingCart, Package, ShoppingBag, BarChart3, Settings as SettingsIcon, LogOut, Store } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, onLogout, user, shopName }) {
   const menuItems = [
@@ -7,7 +8,7 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout, user, shopN
     { id: 'inventory', label: 'Inventory Stock', icon: Package },
     { id: 'reorder', label: 'To-Order List', icon: ShoppingBag },
     { id: 'analytics', label: 'Reports & Analytics', icon: BarChart3 },
-	{ id: 'settings', label: 'Store Settings', icon: SettingsIcon },
+    { id: 'settings', label: 'Store Settings', icon: SettingsIcon },
   ];
 
   return (
@@ -19,7 +20,7 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout, user, shopN
           </div>
           <div className="overflow-hidden">
             <h2 className="font-bold text-sm tracking-wide truncate text-slate-100">
-              {shopName || 'SmartStore POS'}
+              {shopName || 'Smart Store'}
             </h2>
             <p className="text-xs text-slate-400 truncate">{user?.username || 'Admin'}</p>
           </div>

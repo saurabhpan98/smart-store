@@ -11,7 +11,7 @@ import Settings from './pages/Settings';
 export default function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('pos');
-  const [shopName, setShopName] = useState('SmartStore POS');
+  const [shopName, setShopName] = useState('Smart Store');
 
   useEffect(() => {
     if (window.api?.settings?.get) {

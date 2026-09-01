@@ -26,11 +26,14 @@ contextBridge.exposeInMainWorld('api', {
   orders: {
     getAll: () => ipcRenderer.invoke('orders:getAll'),
     add: (order) => ipcRenderer.invoke('orders:add', order),
-    updateStatus: (data) => ipcRenderer.invoke('orders:updateStatus', data),
+    moveToInventory: (orderId) => ipcRenderer.invoke('orders:moveToInventory', orderId),
     delete: (id) => ipcRenderer.invoke('orders:delete', id),
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     update: (data) => ipcRenderer.invoke('settings:update', data),
+  },
+  shell: {
+    openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   }
 });

@@ -1,36 +1,67 @@
+// src/utils/invoicePdf.js
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-export function generateInvoicePDF(invoice) {
-  // 80mm thermal roll format (width: 80mm, custom calculated height)
+export function generateInvoicePDF(invoice, storeInfo = {}) {
+  const shopName = storeInfo.shop_name || 'Smart Store';
+  const phone = storeInfo.phone || '';
+  const address = storeInfo.address || '';
+  const gstin = storeInfo.gstin || '';
+  const footerNote = storeInfo.receipt_footer || 'Thank you for shopping with us!';
+
   const doc = new jsPDF({
     unit: 'mm',
-    format: [80, 200]
+    format: [80, 230]
   });
 
-  doc.setFontSize(12);
+  // Header Title
+  doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('SMART STORE', 40, 10, { align: 'center' });
-  
-  doc.setFontSize(8);
+  doc.text(shopName.toUpperCase(), 40, 9, { align: 'center' });
+
+  doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
-  doc.text('Retail Invoice / Cash Memo', 40, 15, { align: 'center' });
-  doc.text(`Inv: ${invoice.invoice_number}`, 5, 22);
-  doc.text(`Date: ${new Date().toLocaleString()}`, 5, 26);
-  if (invoice.customer_phone) {
-    doc.text(`Customer: ${invoice.customer_phone}`, 5, 30);
+  let currentY = 13;
+
+  if (address) {
+    doc.text(address, 40, currentY, { align: 'center', maxWidth: 72 });
+    currentY += 4;
+  }
+  if (phone) {
+    doc.text(`Phone: ${phone}`, 40, currentY, { align: 'center' });
+    currentY += 4;
+  }
+  if (gstin) {
+    doc.text(`GSTIN: ${gstin}`, 40, currentY, { align: 'center' });
+    currentY += 4;
   }
 
+  doc.line(4, currentY, 76, currentY);
+  currentY += 4;
+
+  doc.setFontSize(7.5);
+  doc.text(`Invoice: ${invoice.invoice_number}`, 4, currentY);
+  currentY += 3.5;
+  doc.text(`Date: ${new Date().toLocaleString()}`, 4, currentY);
+  currentY += 3.5;
+
+  if (invoice.customer_name || invoice.customer_phone) {
+    doc.text(`Customer: ${invoice.customer_name || 'Guest'} (${invoice.customer_phone || 'N/A'})`, 4, currentY);
+    currentY += 3.5;
+  }
+
+  // Items Table
   const tableRows = invoice.items.map((item) => [
     item.name,
     item.qty,
     item.selling_price,
+    item.discount ? `-Rs.${item.discount}` : '0',
     item.line_total.toFixed(2)
   ]);
 
   autoTable(doc, {
-    startY: invoice.customer_phone ? 33 : 29,
-    head: [['Item', 'Qty', 'Rate', 'Total']],
+    startY: currentY + 1,
+    head: [['Item', 'Qty', 'Rate', 'Disc', 'Total']],
     body: tableRows,
     theme: 'plain',
     styles: { fontSize: 7, cellPadding: 1 },
@@ -38,22 +69,27 @@ export function generateInvoicePDF(invoice) {
     margin: { left: 4, right: 4 }
   });
 
-  const finalY = doc.lastAutoTable.finalY + 4;
+  const finalY = doc.lastAutoTable.finalY + 3;
   doc.line(4, finalY, 76, finalY);
-  
-  doc.setFontSize(8);
-  doc.text(`Subtotal:`, 4, finalY + 5);
-  doc.text(`INR ${invoice.subtotal.toFixed(2)}`, 76, finalY + 5, { align: 'right' });
 
-  doc.text(`Discount:`, 4, finalY + 9);
-  doc.text(`- INR ${invoice.discount_total.toFixed(2)}`, 76, finalY + 9, { align: 'right' });
+  doc.setFontSize(7.5);
+  doc.text(`Subtotal:`, 4, finalY + 4);
+  doc.text(`Rs. ${invoice.subtotal.toFixed(2)}`, 76, finalY + 4, { align: 'right' });
 
-  doc.text(`Tax:`, 4, finalY + 13);
-  doc.text(`INR ${invoice.tax_total.toFixed(2)}`, 76, finalY + 13, { align: 'right' });
+  doc.text(`Total Discount:`, 4, finalY + 7.5);
+  doc.text(`- Rs. ${invoice.discount_total.toFixed(2)}`, 76, finalY + 7.5, { align: 'right' });
+
+  doc.text(`Tax / GST:`, 4, finalY + 11);
+  doc.text(`Rs. ${invoice.tax_total.toFixed(2)}`, 76, finalY + 11, { align: 'right' });
 
   doc.setFont('helvetica', 'bold');
-  doc.text(`Grand Total:`, 4, finalY + 18);
-  doc.text(`INR ${invoice.grand_total.toFixed(2)}`, 76, finalY + 18, { align: 'right' });
+  doc.setFontSize(9);
+  doc.text(`Grand Total:`, 4, finalY + 16);
+  doc.text(`Rs. ${invoice.grand_total.toFixed(2)}`, 76, finalY + 16, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.text(footerNote, 40, finalY + 22, { align: 'center' });
 
   doc.save(`${invoice.invoice_number}.pdf`);
 }

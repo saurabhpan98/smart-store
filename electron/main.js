@@ -1,5 +1,5 @@
 // electron/main.js
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
@@ -14,6 +14,7 @@ function createWindow() {
     height: 768,
     minWidth: 1024,
     minHeight: 600,
+    title: 'Smart Store',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -68,15 +69,15 @@ ipcMain.handle('inventory:saveItem', async (_, item) => {
       selling_price=?, tax_rate=?, stock_qty=?, low_stock_threshold=?, unit=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=?
     `);
-    stmt.run(item.category_id, item.name, item.sku_barcode, item.cost_price, item.selling_price, 
-             item.tax_rate, item.stock_qty, item.low_stock_threshold, item.unit, item.id);
+    stmt.run(item.category_id || null, item.name, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
+             item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs', item.id);
   } else {
     const stmt = dbInstance.prepare(`
       INSERT INTO items (category_id, name, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(item.category_id, item.name, item.sku_barcode, item.cost_price, item.selling_price, 
-             item.tax_rate, item.stock_qty, item.low_stock_threshold, item.unit);
+    stmt.run(item.category_id || null, item.name, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
+             item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs');
   }
   return { success: true };
 });
@@ -96,7 +97,7 @@ ipcMain.handle('categories:create', async (_, { name, description }) => {
   return { success: true };
 });
 
-// 4. POS Transaction
+// 4. POS Transaction (Checkout)
 ipcMain.handle('pos:checkout', async (_, invoiceData) => {
   const checkoutTransaction = dbInstance.transaction((data) => {
     const invStmt = dbInstance.prepare(`
@@ -104,8 +105,8 @@ ipcMain.handle('pos:checkout', async (_, invoiceData) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const invResult = invStmt.run(
-      data.invoice_number, data.customer_name, data.customer_phone,
-      data.subtotal, data.discount_total, data.tax_total, data.grand_total, data.payment_mode
+      data.invoice_number, data.customer_name || '', data.customer_phone || '',
+      data.subtotal, data.discount_total || 0, data.tax_total || 0, data.grand_total, data.payment_mode
     );
     const invoiceId = invResult.lastInsertRowid;
 
@@ -116,7 +117,7 @@ ipcMain.handle('pos:checkout', async (_, invoiceData) => {
     const stockStmt = dbInstance.prepare(`UPDATE items SET stock_qty = stock_qty - ? WHERE id = ?`);
 
     for (const item of data.items) {
-      itemStmt.run(invoiceId, item.id, item.name, item.qty, item.cost_price, item.selling_price, item.discount, item.tax, item.line_total);
+      itemStmt.run(invoiceId, item.id, item.name, item.qty, item.cost_price || 0, item.selling_price, item.discount || 0, item.tax || 0, item.line_total);
       stockStmt.run(item.qty, item.id);
     }
 
@@ -149,7 +150,9 @@ ipcMain.handle('analytics:getData', async () => {
   `).all();
 
   const lowStockItems = dbInstance.prepare(`
-    SELECT id, name, stock_qty, low_stock_threshold, unit FROM items WHERE stock_qty <= low_stock_threshold
+    SELECT items.*, categories.name as category_name FROM items 
+    LEFT JOIN categories ON items.category_id = categories.id
+    WHERE stock_qty <= low_stock_threshold
   `).all();
 
   return { summary, topSelling, lowStockItems };
@@ -159,7 +162,7 @@ ipcMain.handle('analytics:getData', async () => {
 ipcMain.handle('db:backup', async () => {
   const { filePath } = await dialog.showSaveDialog({
     title: 'Backup Database',
-    defaultPath: `pos_backup_${new Date().toISOString().slice(0, 10)}.db`,
+    defaultPath: `smart_store_backup_${new Date().toISOString().slice(0, 10)}.db`,
     filters: [{ name: 'SQLite DB', extensions: ['db', 'sqlite'] }]
   });
   if (filePath) {
@@ -169,24 +172,71 @@ ipcMain.handle('db:backup', async () => {
   return { success: false };
 });
 
-// 7. Orders / Reorder List Handlers
+// 7. Orders & Custom Reorder Handling
 ipcMain.handle('orders:getAll', async () => {
-  return dbInstance.prepare(`SELECT * FROM purchase_orders ORDER BY status ASC, created_at DESC`).all();
+  return dbInstance.prepare(`
+    SELECT purchase_orders.*, categories.name as category_name
+    FROM purchase_orders 
+    LEFT JOIN categories ON purchase_orders.category_id = categories.id
+    ORDER BY purchase_orders.status ASC, purchase_orders.created_at DESC
+  `).all();
 });
 
-ipcMain.handle('orders:add', async (_, { item_name, suggested_qty, status = 'PENDING' }) => {
-  const stmt = dbInstance.prepare(`INSERT INTO purchase_orders (item_name, suggested_qty, status) VALUES (?, ?, ?)`);
-  stmt.run(item_name, suggested_qty, status);
+ipcMain.handle('orders:add', async (_, order) => {
+  const stmt = dbInstance.prepare(`
+    INSERT INTO purchase_orders (category_id, item_name, sku_barcode, cost_price, selling_price, tax_rate, suggested_qty, low_stock_threshold, unit, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+  `);
+  stmt.run(
+    order.category_id || null,
+    order.item_name,
+    order.sku_barcode || null,
+    order.cost_price || 0,
+    order.selling_price || 0,
+    order.tax_rate || 0,
+    order.suggested_qty || 1,
+    order.low_stock_threshold || 5,
+    order.unit || 'pcs'
+  );
   return { success: true };
 });
 
-ipcMain.handle('orders:updateStatus', async (_, { id, status }) => {
-  dbInstance.prepare(`UPDATE purchase_orders SET status = ? WHERE id = ?`).run(status, id);
-  return { success: true };
+// Transfer completed custom order into Inventory Items table and delete from reorder list
+ipcMain.handle('orders:moveToInventory', async (_, orderId) => {
+  const transferTx = dbInstance.transaction((id) => {
+    const order = dbInstance.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id);
+    if (!order) throw new Error('Order not found');
+
+    const insertStmt = dbInstance.prepare(`
+      INSERT INTO items (category_id, name, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertStmt.run(
+      order.category_id || null,
+      order.item_name,
+      order.sku_barcode || null,
+      order.cost_price || 0,
+      order.selling_price || 0,
+      order.tax_rate || 0,
+      order.suggested_qty || 0,
+      order.low_stock_threshold || 5,
+      order.unit || 'pcs'
+    );
+
+    dbInstance.prepare('DELETE FROM purchase_orders WHERE id = ?').run(id);
+  });
+
+  try {
+    transferTx(orderId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('orders:delete', async (_, id) => {
-  dbInstance.prepare(`DELETE FROM purchase_orders WHERE id = ?`).run(id);
+  dbInstance.prepare('DELETE FROM purchase_orders WHERE id = ?').run(id);
   return { success: true };
 });
 
@@ -209,5 +259,11 @@ ipcMain.handle('settings:update', async (_, settings) => {
     settings.gstin,
     settings.receipt_footer
   );
+  return { success: true };
+});
+
+// 9. External Browser Link Opener (WhatsApp Web in Chrome/Edge)
+ipcMain.handle('shell:openExternal', async (_, url) => {
+  await shell.openExternal(url);
   return { success: true };
 });
