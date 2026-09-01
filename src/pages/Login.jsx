@@ -1,3 +1,4 @@
+// src/pages/Login.jsx
 import React, { useState } from 'react';
 import { Lock, User, Store } from 'lucide-react';
 
@@ -11,7 +12,6 @@ export default function Login({ onLoginSuccess }) {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
       const res = await window.api.auth.login({ username, password });
       if (res.success) {

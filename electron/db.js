@@ -73,7 +73,7 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // 5. Invoice Items (Line Items) Table
+  // 5. Invoice Items Table
   db.exec(`
     CREATE TABLE IF NOT EXISTS invoice_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,28 +100,28 @@ function initDatabase(userDataPath) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
-  
-  // Insert default settings row if empty
-	const settingsCount = db.prepare('SELECT count(*) as count FROM store_settings').get();
-	if (settingsCount.count === 0) {
-	  db.prepare(`
-		INSERT INTO store_settings (id, shop_name, owner_name, phone, address, gstin, receipt_footer)
-		VALUES (1, 'SmartStore Retail', 'Store Owner', '', '', '', 'Thank you for shopping with us!')
-	  `).run();
-	}
-  
-  // Add inside initDatabase() in electron/db.js:
-	db.exec(`
-	  CREATE TABLE IF NOT EXISTS store_settings (
-		id INTEGER PRIMARY KEY CHECK (id = 1),
-		shop_name TEXT DEFAULT 'SmartStore Retail',
-		owner_name TEXT DEFAULT 'Store Owner',
-		phone TEXT DEFAULT '',
-		address TEXT DEFAULT '',
-		gstin TEXT DEFAULT '',
-		receipt_footer TEXT DEFAULT 'Thank you for shopping with us!'
-	  );
-	`);
+
+  // 7. Store Settings Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS store_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      shop_name TEXT DEFAULT 'SmartStore Retail',
+      owner_name TEXT DEFAULT 'Store Owner',
+      phone TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      gstin TEXT DEFAULT '',
+      receipt_footer TEXT DEFAULT 'Thank you for shopping with us!'
+    );
+  `);
+
+  // Seed default settings row if empty
+  const settingsCount = db.prepare('SELECT count(*) as count FROM store_settings').get();
+  if (settingsCount.count === 0) {
+    db.prepare(`
+      INSERT INTO store_settings (id, shop_name, owner_name, phone, address, gstin, receipt_footer)
+      VALUES (1, 'SmartStore Retail', 'Store Owner', '', '', '', 'Thank you for shopping with us!')
+    `).run();
+  }
 
   return { db, dbPath };
 }

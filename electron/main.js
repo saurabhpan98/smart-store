@@ -14,19 +14,22 @@ function createWindow() {
     height: 768,
     minWidth: 1024,
     minHeight: 600,
-    icon: path.join(__dirname, '../public/icon.ico'), // Custom icon attached
     webPreferences: {
-		preload: path.join(__dirname, 'preload.js'),
-		contextIsolation: true,
-		nodeIntegration: false,
-		sandbox: false,
-		backgroundThrottling: false // Prevents input/timer sleep
-	 }
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false
+    }
   });
 
-  const { db, dbPath } = initDatabase(app.getPath('userData'));
-  dbInstance = db;
-  dbLocation = dbPath;
+  try {
+    const { db, dbPath } = initDatabase(app.getPath('userData'));
+    dbInstance = db;
+    dbLocation = dbPath;
+  } catch (err) {
+    console.error('Database initialization error:', err);
+  }
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
@@ -93,10 +96,9 @@ ipcMain.handle('categories:create', async (_, { name, description }) => {
   return { success: true };
 });
 
-// 4. POS Transaction (Atomic Stock Deduction & Invoice Creation)
+// 4. POS Transaction
 ipcMain.handle('pos:checkout', async (_, invoiceData) => {
   const checkoutTransaction = dbInstance.transaction((data) => {
-    // 1. Insert Invoice
     const invStmt = dbInstance.prepare(`
       INSERT INTO invoices (invoice_number, customer_name, customer_phone, subtotal, discount_total, tax_total, grand_total, payment_mode)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -107,7 +109,6 @@ ipcMain.handle('pos:checkout', async (_, invoiceData) => {
     );
     const invoiceId = invResult.lastInsertRowid;
 
-    // 2. Insert Line Items & Deduct Inventory
     const itemStmt = dbInstance.prepare(`
       INSERT INTO invoice_items (invoice_id, item_id, item_name, quantity, unit_cost_price, unit_selling_price, discount_amount, tax_amount, line_total)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -154,7 +155,7 @@ ipcMain.handle('analytics:getData', async () => {
   return { summary, topSelling, lowStockItems };
 });
 
-// 6. 1-Click Backup & Restore
+// 6. Database Backup
 ipcMain.handle('db:backup', async () => {
   const { filePath } = await dialog.showSaveDialog({
     title: 'Backup Database',
@@ -168,18 +169,13 @@ ipcMain.handle('db:backup', async () => {
   return { success: false };
 });
 
-// --- Reorder / Purchase Orders Handlers ---
+// 7. Orders / Reorder List Handlers
 ipcMain.handle('orders:getAll', async () => {
-  return dbInstance.prepare(`
-    SELECT * FROM purchase_orders ORDER BY status ASC, created_at DESC
-  `).all();
+  return dbInstance.prepare(`SELECT * FROM purchase_orders ORDER BY status ASC, created_at DESC`).all();
 });
 
 ipcMain.handle('orders:add', async (_, { item_name, suggested_qty, status = 'PENDING' }) => {
-  const stmt = dbInstance.prepare(`
-    INSERT INTO purchase_orders (item_name, suggested_qty, status)
-    VALUES (?, ?, ?)
-  `);
+  const stmt = dbInstance.prepare(`INSERT INTO purchase_orders (item_name, suggested_qty, status) VALUES (?, ?, ?)`);
   stmt.run(item_name, suggested_qty, status);
   return { success: true };
 });
@@ -194,6 +190,7 @@ ipcMain.handle('orders:delete', async (_, id) => {
   return { success: true };
 });
 
+// 8. Store Settings Handlers
 ipcMain.handle('settings:get', async () => {
   return dbInstance.prepare('SELECT * FROM store_settings WHERE id = 1').get();
 });
