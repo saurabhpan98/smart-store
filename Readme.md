@@ -1,4 +1,4 @@
-# Retail POS & Inventory Management System
+# Smart Store - Retail POS & Inventory Management System
 
 A robust, standalone, and 100% offline Windows Desktop Point of Sale (POS) and Inventory Management Application built for retail shopkeepers and store owners.
 
