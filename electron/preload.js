@@ -28,5 +28,9 @@ contextBridge.exposeInMainWorld('api', {
     add: (order) => ipcRenderer.invoke('orders:add', order),
     updateStatus: (data) => ipcRenderer.invoke('orders:updateStatus', data),
     delete: (id) => ipcRenderer.invoke('orders:delete', id),
+  },
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+    update: (data) => ipcRenderer.invoke('settings:update', data),
   }
 });

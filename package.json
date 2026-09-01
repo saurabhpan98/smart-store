@@ -36,7 +36,7 @@
   },
   "build": {
     "appId": "com.retail.pos",
-    "productName": "Retail POS & Inventory",
+    "productName": "Smart Store",
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -46,7 +46,8 @@
       "output": "release"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+	  "icon": "public/app-icon.svg"
     }
   }
 }

@@ -14,12 +14,14 @@ function createWindow() {
     height: 768,
     minWidth: 1024,
     minHeight: 600,
+    icon: path.join(__dirname, '../public/icon.ico'), // Custom icon attached
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
-    }
+		preload: path.join(__dirname, 'preload.js'),
+		contextIsolation: true,
+		nodeIntegration: false,
+		sandbox: false,
+		backgroundThrottling: false // Prevents input/timer sleep
+	 }
   });
 
   const { db, dbPath } = initDatabase(app.getPath('userData'));
@@ -189,5 +191,26 @@ ipcMain.handle('orders:updateStatus', async (_, { id, status }) => {
 
 ipcMain.handle('orders:delete', async (_, id) => {
   dbInstance.prepare(`DELETE FROM purchase_orders WHERE id = ?`).run(id);
+  return { success: true };
+});
+
+ipcMain.handle('settings:get', async () => {
+  return dbInstance.prepare('SELECT * FROM store_settings WHERE id = 1').get();
+});
+
+ipcMain.handle('settings:update', async (_, settings) => {
+  const stmt = dbInstance.prepare(`
+    UPDATE store_settings 
+    SET shop_name=?, owner_name=?, phone=?, address=?, gstin=?, receipt_footer=?
+    WHERE id = 1
+  `);
+  stmt.run(
+    settings.shop_name,
+    settings.owner_name,
+    settings.phone,
+    settings.address,
+    settings.gstin,
+    settings.receipt_footer
+  );
   return { success: true };
 });

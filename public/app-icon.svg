@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="posGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#4338ca" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <!-- Rounded App Tile -->
+  <rect width="512" height="512" rx="110" fill="url(#posGrad)"/>
+  
+  <!-- Inner Badge Container -->
+  <g filter="url(#dropShadow)">
+    <!-- Storefront Canopy -->
+    <path d="M120 180 L392 180 L370 240 L142 240 Z" fill="#ffffff" opacity="0.95"/>
+    <path d="M142 240 L190 240 L180 270 L150 270 Z" fill="#38bdf8"/>
+    <path d="M230 240 L282 240 L277 270 L235 270 Z" fill="#38bdf8"/>
+    <path d="M322 240 L370 240 L362 270 L332 270 Z" fill="#38bdf8"/>
+    
+    <!-- POS / Shopping Cart Emblem -->
+    <rect x="156" y="275" width="200" height="130" rx="16" fill="#ffffff"/>
+    <rect x="180" y="300" width="152" height="40" rx="8" fill="#e0e7ff"/>
+    <circle cx="210" cy="370" r="14" fill="#4f46e5"/>
+    <circle cx="302" cy="370" r="14" fill="#4f46e5"/>
+    <path d="M245 370 L267 370" stroke="#4f46e5" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>
