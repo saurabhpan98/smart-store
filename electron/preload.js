@@ -22,5 +22,11 @@ contextBridge.exposeInMainWorld('api', {
   },
   backup: {
     exportDb: () => ipcRenderer.invoke('db:backup'),
+  },
+  orders: {
+    getAll: () => ipcRenderer.invoke('orders:getAll'),
+    add: (order) => ipcRenderer.invoke('orders:add', order),
+    updateStatus: (data) => ipcRenderer.invoke('orders:updateStatus', data),
+    delete: (id) => ipcRenderer.invoke('orders:delete', id),
   }
 });

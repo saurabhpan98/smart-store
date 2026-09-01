@@ -1,6 +1,6 @@
 // src/pages/POS.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Trash2, ShoppingCart, Send, FileDown, Plus, Package } from 'lucide-react';
+import { Search, Trash2, ShoppingCart, Send, FileDown, Plus, Package, CheckCircle2 } from 'lucide-react';
 import { sendWhatsAppInvoice } from '../utils/whatsapp';
 import { generateInvoicePDF } from '../utils/invoicePdf';
 
@@ -88,12 +88,12 @@ export default function POS() {
     );
   };
 
-  // Calculations
+  // Totals calculations
   const subtotal = cart.reduce((acc, curr) => acc + curr.line_total, 0);
   const totalTax = cart.reduce((acc, curr) => acc + (curr.tax * curr.qty), 0);
   const grandTotal = Math.max(0, subtotal + totalTax - billDiscount);
 
-  const handleCheckout = async (actionType = 'print') => {
+  const handleCheckout = async (actionType = 'done') => {
     if (cart.length === 0) {
       alert('Cart is empty. Please add items to bill.');
       return;
@@ -116,14 +116,16 @@ export default function POS() {
       const res = await window.api.pos.checkout(invoicePayload);
       if (res.success) {
         if (actionType === 'print') {
-          // Generates and downloads the PDF receipt directly
           generateInvoicePDF(invoicePayload);
         } else if (actionType === 'whatsapp') {
           if (customer.phone) {
             sendWhatsAppInvoice(customer.phone, invoicePayload);
           } else {
-            alert('Please provide a WhatsApp number for customer.');
+            alert('Please provide a WhatsApp number for the customer.');
           }
+        } else if (actionType === 'done') {
+          // Simple silent completion confirmation
+          alert(`Order Completed Successfully! Invoice #${invoiceNumber}`);
         }
 
         // Reset POS Form
@@ -132,7 +134,7 @@ export default function POS() {
         setBillDiscount(0);
         loadInventory();
       } else {
-        alert('Checkout Failed: ' + (res.error || 'Database write error'));
+        alert('Checkout Failed: ' + (res.error || 'Database error'));
       }
     } catch (err) {
       console.error(err);
@@ -248,7 +250,7 @@ export default function POS() {
       </div>
 
       {/* Right Pane: Cart & Invoice Checkout */}
-      <div className="w-[380px] flex flex-col bg-white rounded-xl shadow-xs border border-slate-200 p-4 h-full">
+      <div className="w-[400px] flex flex-col bg-white rounded-xl shadow-xs border border-slate-200 p-4 h-full">
         <h3 className="font-bold text-base flex items-center gap-2 mb-3 text-slate-800 pb-2 border-b">
           <ShoppingCart className="h-5 w-5 text-indigo-600" /> Current Bill
         </h3>
@@ -355,19 +357,26 @@ export default function POS() {
             ))}
           </div>
 
-          {/* Checkout Buttons */}
-          <div className="grid grid-cols-2 gap-2 pt-2">
+          {/* 3 Checkout Action Buttons */}
+          <div className="grid grid-cols-3 gap-1.5 pt-2">
+            <button
+              type="button"
+              onClick={() => handleCheckout('done')}
+              className="flex justify-center items-center gap-1 bg-indigo-600 text-white py-2 rounded-lg text-xs font-semibold hover:bg-indigo-700 transition shadow-xs"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" /> Done
+            </button>
             <button
               type="button"
               onClick={() => handleCheckout('print')}
-              className="flex justify-center items-center gap-1.5 bg-slate-900 text-white py-2 rounded-lg text-xs font-semibold hover:bg-slate-800 transition shadow-xs"
+              className="flex justify-center items-center gap-1 bg-slate-900 text-white py-2 rounded-lg text-xs font-semibold hover:bg-slate-800 transition shadow-xs"
             >
-              <FileDown className="h-3.5 w-3.5" /> Print / Save PDF
+              <FileDown className="h-3.5 w-3.5" /> PDF
             </button>
             <button
               type="button"
               onClick={() => handleCheckout('whatsapp')}
-              className="flex justify-center items-center gap-1.5 bg-emerald-600 text-white py-2 rounded-lg text-xs font-semibold hover:bg-emerald-700 transition shadow-xs"
+              className="flex justify-center items-center gap-1 bg-emerald-600 text-white py-2 rounded-lg text-xs font-semibold hover:bg-emerald-700 transition shadow-xs"
             >
               <Send className="h-3.5 w-3.5" /> WhatsApp
             </button>

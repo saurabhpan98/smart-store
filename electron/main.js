@@ -165,3 +165,29 @@ ipcMain.handle('db:backup', async () => {
   }
   return { success: false };
 });
+
+// --- Reorder / Purchase Orders Handlers ---
+ipcMain.handle('orders:getAll', async () => {
+  return dbInstance.prepare(`
+    SELECT * FROM purchase_orders ORDER BY status ASC, created_at DESC
+  `).all();
+});
+
+ipcMain.handle('orders:add', async (_, { item_name, suggested_qty, status = 'PENDING' }) => {
+  const stmt = dbInstance.prepare(`
+    INSERT INTO purchase_orders (item_name, suggested_qty, status)
+    VALUES (?, ?, ?)
+  `);
+  stmt.run(item_name, suggested_qty, status);
+  return { success: true };
+});
+
+ipcMain.handle('orders:updateStatus', async (_, { id, status }) => {
+  dbInstance.prepare(`UPDATE purchase_orders SET status = ? WHERE id = ?`).run(status, id);
+  return { success: true };
+});
+
+ipcMain.handle('orders:delete', async (_, id) => {
+  dbInstance.prepare(`DELETE FROM purchase_orders WHERE id = ?`).run(id);
+  return { success: true };
+});
