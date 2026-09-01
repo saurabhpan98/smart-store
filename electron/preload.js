@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   orders: {
     getAll: () => ipcRenderer.invoke('orders:getAll'),
-    add: (order) => ipcRenderer.invoke('orders:add', order),
+    save: (order) => ipcRenderer.invoke('orders:save', order),
     moveToInventory: (orderId) => ipcRenderer.invoke('orders:moveToInventory', orderId),
     delete: (id) => ipcRenderer.invoke('orders:delete', id),
   },

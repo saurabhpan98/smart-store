@@ -192,7 +192,7 @@ export default function POS() {
     }
     const invoicePayload = getInvoicePayload();
     sendWhatsAppInvoice(customer.phone, invoicePayload, storeSettings.shop_name);
-    showNotice('Opening WhatsApp in browser...', 'success');
+    showNotice('Opening WhatsApp Web in your browser...', 'success');
   };
 
   const handleDoneCheckout = async () => {
@@ -257,7 +257,7 @@ export default function POS() {
                 <th className="py-2.5 px-4">Category</th>
                 <th className="py-2.5 px-4">Barcode / SKU</th>
                 <th className="py-2.5 px-4">Stock</th>
-                <th className="py-2.5 px-4 text-right">Price</th>
+                <th className="py-2.5 px-4 text-right">Selling Rate</th>
                 <th className="py-2.5 px-4 text-center">Action</th>
               </tr>
             </thead>
@@ -303,7 +303,9 @@ export default function POS() {
                           {item.stock_qty} {item.unit || 'pcs'}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right font-bold text-slate-900">₹{item.selling_price}</td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-900">
+                        ₹{item.selling_price} <span className="text-xs font-normal text-slate-500">/ {item.unit || 'pcs'}</span>
+                      </td>
                       <td className="py-3 px-4 text-center">
                         <button
                           disabled={isOutOfStock}
@@ -331,7 +333,6 @@ export default function POS() {
           <ShoppingCart className="h-5 w-5 text-indigo-600" /> Current Bill
         </h3>
 
-        {/* Feedback Alert Toast */}
         {feedback.message && (
           <div className={`mb-2 p-2 rounded-lg text-xs font-medium flex items-center gap-1.5 ${
             feedback.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
@@ -376,7 +377,7 @@ export default function POS() {
                 <div className="flex justify-between items-center text-xs">
                   <div className="flex-1 min-w-0 pr-2">
                     <p className="font-semibold text-slate-800 truncate">{idx + 1}. {item.name}</p>
-                    <span className="text-[11px] text-slate-500">₹{item.selling_price} each</span>
+                    <span className="text-[11px] text-slate-500">₹{item.selling_price} / {item.unit || 'pcs'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input

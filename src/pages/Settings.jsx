@@ -13,7 +13,7 @@ export default function Settings({ onSettingsUpdated }) {
   });
   const [saved, setSaved] = useState(false);
 
-  // Admin Credentials State
+  // Admin Credentials State (Optional Independent Fields)
   const [credForm, setCredForm] = useState({
     currentPassword: '',
     newUsername: '',
@@ -47,7 +47,17 @@ export default function Settings({ onSettingsUpdated }) {
     e.preventDefault();
     setCredStatus({ message: '', type: '' });
 
-    if (credForm.newPassword !== credForm.confirmPassword) {
+    if (!credForm.currentPassword) {
+      setCredStatus({ message: 'Current password is required to authorize changes.', type: 'error' });
+      return;
+    }
+
+    if (!credForm.newUsername.trim() && !credForm.newPassword.trim()) {
+      setCredStatus({ message: 'Please enter a new Username OR a new Password to update.', type: 'error' });
+      return;
+    }
+
+    if (credForm.newPassword && credForm.newPassword !== credForm.confirmPassword) {
       setCredStatus({ message: 'New passwords do not match!', type: 'error' });
       return;
     }
@@ -60,7 +70,7 @@ export default function Settings({ onSettingsUpdated }) {
       });
 
       if (res.success) {
-        setCredStatus({ message: 'Admin username and password updated successfully!', type: 'success' });
+        setCredStatus({ message: res.message || 'Credentials updated successfully!', type: 'success' });
         setCredForm({ currentPassword: '', newUsername: '', newPassword: '', confirmPassword: '' });
       } else {
         setCredStatus({ message: res.message || 'Failed to update credentials', type: 'error' });
@@ -173,7 +183,7 @@ export default function Settings({ onSettingsUpdated }) {
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-800">Admin Login Security</h2>
-            <p className="text-xs text-slate-500">Update your store login username and access password.</p>
+            <p className="text-xs text-slate-500">Update username, password, or both. Leave blank what you don't want to change.</p>
           </div>
         </div>
 
@@ -188,52 +198,49 @@ export default function Settings({ onSettingsUpdated }) {
 
         <form onSubmit={handleCredentialsSubmit} className="space-y-4 text-sm">
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Current Password *</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Current Password (Required) *</label>
             <input
               required
               type="password"
-              placeholder="Enter current password to verify"
+              placeholder="Enter current password to verify identity"
               className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={credForm.currentPassword}
+              value={credForm.currentPassword || ''}
               onChange={(e) => setCredForm({ ...credForm, currentPassword: e.target.value })}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="border-t pt-3">
+            <label className="block text-xs font-semibold text-slate-600 mb-1">New Username (Optional)</label>
+            <input
+              type="text"
+              placeholder="Leave empty if you don't want to change username"
+              className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={credForm.newUsername || ''}
+              onChange={(e) => setCredForm({ ...credForm, newUsername: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 border-t pt-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">New Username *</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">New Password (Optional)</label>
               <input
-                required
-                type="text"
-                placeholder="e.g. admin or store_manager"
-                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                value={credForm.newUsername}
-                onChange={(e) => setCredForm({ ...credForm, newUsername: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">New Password *</label>
-              <input
-                required
                 type="password"
                 placeholder="••••••••"
                 className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                value={credForm.newPassword}
+                value={credForm.newPassword || ''}
                 onChange={(e) => setCredForm({ ...credForm, newPassword: e.target.value })}
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Confirm New Password *</label>
-            <input
-              required
-              type="password"
-              placeholder="••••••••"
-              className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={credForm.confirmPassword}
-              onChange={(e) => setCredForm({ ...credForm, confirmPassword: e.target.value })}
-            />
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Confirm New Password</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                value={credForm.confirmPassword || ''}
+                onChange={(e) => setCredForm({ ...credForm, confirmPassword: e.target.value })}
+              />
+            </div>
           </div>
 
           <div className="pt-2">
@@ -241,7 +248,7 @@ export default function Settings({ onSettingsUpdated }) {
               type="submit"
               className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-slate-800 transition"
             >
-              <KeyRound className="h-4 w-4" /> Update Admin Credentials
+              <KeyRound className="h-4 w-4" /> Save Security Credentials
             </button>
           </div>
         </form>

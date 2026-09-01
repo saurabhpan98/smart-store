@@ -43,13 +43,31 @@ app.whenReady().then(createWindow);
 
 // --- IPC HANDLERS ---
 
-// 1. Authentication
+// 1. Authentication & Flexible Credentials Update
 ipcMain.handle('auth:login', async (_, { username, password }) => {
   const user = dbInstance.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user) return { success: false, message: 'Invalid credentials' };
   const valid = bcrypt.compareSync(password, user.password_hash);
   return valid ? { success: true, user: { id: user.id, username: user.username, role: user.role } } 
                : { success: false, message: 'Invalid credentials' };
+});
+
+ipcMain.handle('auth:changeCredentials', async (_, { currentPassword, newUsername, newPassword }) => {
+  const adminUser = dbInstance.prepare('SELECT * FROM users WHERE role = ? LIMIT 1').get('admin');
+  if (!adminUser) return { success: false, message: 'Admin user not found' };
+
+  const valid = bcrypt.compareSync(currentPassword, adminUser.password_hash);
+  if (!valid) {
+    return { success: false, message: 'Current password is incorrect' };
+  }
+
+  const updatedUsername = newUsername && newUsername.trim() ? newUsername.trim() : adminUser.username;
+  const updatedHash = newPassword && newPassword.trim() ? bcrypt.hashSync(newPassword.trim(), 10) : adminUser.password_hash;
+
+  dbInstance.prepare('UPDATE users SET username = ?, password_hash = ? WHERE id = ?')
+    .run(updatedUsername, updatedHash, adminUser.id);
+
+  return { success: true, message: 'Admin profile updated successfully', username: updatedUsername };
 });
 
 // 2. Inventory Operations
@@ -63,23 +81,35 @@ ipcMain.handle('inventory:getAll', async () => {
 });
 
 ipcMain.handle('inventory:saveItem', async (_, item) => {
-  if (item.id) {
-    const stmt = dbInstance.prepare(`
-      UPDATE items SET category_id=?, name=?, sku_barcode=?, cost_price=?, 
-      selling_price=?, tax_rate=?, stock_qty=?, low_stock_threshold=?, unit=?, updated_at=CURRENT_TIMESTAMP
-      WHERE id=?
-    `);
-    stmt.run(item.category_id || null, item.name, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
-             item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs', item.id);
-  } else {
-    const stmt = dbInstance.prepare(`
-      INSERT INTO items (category_id, name, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(item.category_id || null, item.name, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
-             item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs');
+  try {
+    if (item.sku_barcode && item.sku_barcode.trim()) {
+      const existing = dbInstance.prepare('SELECT id FROM items WHERE sku_barcode = ? AND id != ?')
+        .get(item.sku_barcode.trim(), item.id || 0);
+      if (existing) {
+        return { success: false, error: `Barcode '${item.sku_barcode}' already exists for another product.` };
+      }
+    }
+
+    if (item.id) {
+      const stmt = dbInstance.prepare(`
+        UPDATE items SET category_id=?, name=?, sku_barcode=?, cost_price=?, 
+        selling_price=?, tax_rate=?, stock_qty=?, low_stock_threshold=?, unit=?, updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+      `);
+      stmt.run(item.category_id || null, item.name, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
+               item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs', item.id);
+    } else {
+      const stmt = dbInstance.prepare(`
+        INSERT INTO items (category_id, name, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      stmt.run(item.category_id || null, item.name, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
+               item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs');
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
-  return { success: true };
 });
 
 ipcMain.handle('inventory:deleteItem', async (_, id) => {
@@ -93,11 +123,15 @@ ipcMain.handle('categories:getAll', async () => {
 });
 
 ipcMain.handle('categories:create', async (_, { name, description }) => {
-  dbInstance.prepare('INSERT INTO categories (name, description) VALUES (?, ?)').run(name, description);
-  return { success: true };
+  try {
+    dbInstance.prepare('INSERT INTO categories (name, description) VALUES (?, ?)').run(name, description);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: 'Category already exists' };
+  }
 });
 
-// 4. POS Transaction (Checkout)
+// 4. POS Checkout
 ipcMain.handle('pos:checkout', async (_, invoiceData) => {
   const checkoutTransaction = dbInstance.transaction((data) => {
     const invStmt = dbInstance.prepare(`
@@ -172,7 +206,7 @@ ipcMain.handle('db:backup', async () => {
   return { success: false };
 });
 
-// 7. Orders & Custom Reorder Handling
+// 7. Orders & Custom Reorder Handling (with Edit & Safe Move)
 ipcMain.handle('orders:getAll', async () => {
   return dbInstance.prepare(`
     SELECT purchase_orders.*, categories.name as category_name
@@ -182,53 +216,71 @@ ipcMain.handle('orders:getAll', async () => {
   `).all();
 });
 
-ipcMain.handle('orders:add', async (_, order) => {
-  const stmt = dbInstance.prepare(`
-    INSERT INTO purchase_orders (category_id, item_name, sku_barcode, cost_price, selling_price, tax_rate, suggested_qty, low_stock_threshold, unit, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
-  `);
-  stmt.run(
-    order.category_id || null,
-    order.item_name,
-    order.sku_barcode || null,
-    order.cost_price || 0,
-    order.selling_price || 0,
-    order.tax_rate || 0,
-    order.suggested_qty || 1,
-    order.low_stock_threshold || 5,
-    order.unit || 'pcs'
-  );
+ipcMain.handle('orders:save', async (_, order) => {
+  if (order.id) {
+    const stmt = dbInstance.prepare(`
+      UPDATE purchase_orders 
+      SET category_id=?, item_name=?, sku_barcode=?, cost_price=?, selling_price=?, tax_rate=?, suggested_qty=?, low_stock_threshold=?, unit=?
+      WHERE id=?
+    `);
+    stmt.run(
+      order.category_id || null, order.item_name, order.sku_barcode || null,
+      order.cost_price || 0, order.selling_price || 0, order.tax_rate || 0,
+      order.suggested_qty || 1, order.low_stock_threshold || 5, order.unit || 'pcs',
+      order.id
+    );
+  } else {
+    const stmt = dbInstance.prepare(`
+      INSERT INTO purchase_orders (category_id, item_name, sku_barcode, cost_price, selling_price, tax_rate, suggested_qty, low_stock_threshold, unit, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+    `);
+    stmt.run(
+      order.category_id || null, order.item_name, order.sku_barcode || null,
+      order.cost_price || 0, order.selling_price || 0, order.tax_rate || 0,
+      order.suggested_qty || 1, order.low_stock_threshold || 5, order.unit || 'pcs'
+    );
+  }
   return { success: true };
 });
 
-// Transfer completed custom order into Inventory Items table and delete from reorder list
 ipcMain.handle('orders:moveToInventory', async (_, orderId) => {
-  const transferTx = dbInstance.transaction((id) => {
-    const order = dbInstance.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id);
-    if (!order) throw new Error('Order not found');
-
-    const insertStmt = dbInstance.prepare(`
-      INSERT INTO items (category_id, name, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    insertStmt.run(
-      order.category_id || null,
-      order.item_name,
-      order.sku_barcode || null,
-      order.cost_price || 0,
-      order.selling_price || 0,
-      order.tax_rate || 0,
-      order.suggested_qty || 0,
-      order.low_stock_threshold || 5,
-      order.unit || 'pcs'
-    );
-
-    dbInstance.prepare('DELETE FROM purchase_orders WHERE id = ?').run(id);
-  });
-
   try {
-    transferTx(orderId);
+    const order = dbInstance.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(orderId);
+    if (!order) return { success: false, error: 'Order not found' };
+
+    // Check Barcode Conflict
+    if (order.sku_barcode && order.sku_barcode.trim()) {
+      const conflict = dbInstance.prepare('SELECT id, name FROM items WHERE sku_barcode = ?').get(order.sku_barcode.trim());
+      if (conflict) {
+        return { 
+          success: false, 
+          error: `Barcode '${order.sku_barcode}' is already assigned to item '${conflict.name}'. Please edit the custom item barcode first.` 
+        };
+      }
+    }
+
+    const transferTx = dbInstance.transaction(() => {
+      const insertStmt = dbInstance.prepare(`
+        INSERT INTO items (category_id, name, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      insertStmt.run(
+        order.category_id || null,
+        order.item_name,
+        order.sku_barcode || null,
+        order.cost_price || 0,
+        order.selling_price || 0,
+        order.tax_rate || 0,
+        order.suggested_qty || 0,
+        order.low_stock_threshold || 5,
+        order.unit || 'pcs'
+      );
+
+      dbInstance.prepare('DELETE FROM purchase_orders WHERE id = ?').run(orderId);
+    });
+
+    transferTx();
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -240,7 +292,7 @@ ipcMain.handle('orders:delete', async (_, id) => {
   return { success: true };
 });
 
-// 8. Store Settings Handlers
+// 8. Store Settings
 ipcMain.handle('settings:get', async () => {
   return dbInstance.prepare('SELECT * FROM store_settings WHERE id = 1').get();
 });
@@ -262,25 +314,8 @@ ipcMain.handle('settings:update', async (_, settings) => {
   return { success: true };
 });
 
-// 9. External Browser Link Opener (WhatsApp Web in Chrome/Edge)
+// 9. External Link Opener
 ipcMain.handle('shell:openExternal', async (_, url) => {
   await shell.openExternal(url);
   return { success: true };
-});
-
-
-ipcMain.handle('auth:changeCredentials', async (_, { currentPassword, newUsername, newPassword }) => {
-  const adminUser = dbInstance.prepare('SELECT * FROM users WHERE role = ? LIMIT 1').get('admin');
-  if (!adminUser) return { success: false, message: 'Admin user not found' };
-
-  const valid = bcrypt.compareSync(currentPassword, adminUser.password_hash);
-  if (!valid) {
-    return { success: false, message: 'Current password is incorrect' };
-  }
-
-  const newHash = bcrypt.hashSync(newPassword, 10);
-  dbInstance.prepare('UPDATE users SET username = ?, password_hash = ? WHERE id = ?')
-    .run(newUsername, newHash, adminUser.id);
-
-  return { success: true, message: 'Credentials updated successfully' };
 });

@@ -1,6 +1,6 @@
 // src/pages/ReorderList.jsx
 import React, { useEffect, useState } from 'react';
-import { RefreshCw, CheckCircle2, FileDown, Plus, Trash2, Check, X, AlertCircle, ShoppingBag } from 'lucide-react';
+import { RefreshCw, CheckCircle2, FileDown, Plus, Trash2, Check, X, AlertCircle, Edit2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -8,9 +8,11 @@ export default function ReorderList() {
   const [lowStockItems, setLowStockItems] = useState([]);
   const [customOrders, setCustomOrders] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [notice, setNotice] = useState({ message: '', type: '' });
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
-
   const [formData, setFormData] = useState({
+    id: null,
     item_name: '',
     category_id: '',
     sku_barcode: '',
@@ -26,6 +28,11 @@ export default function ReorderList() {
     loadAllOrders();
     loadCategories();
   }, []);
+
+  const showNotice = (message, type = 'error') => {
+    setNotice({ message, type });
+    setTimeout(() => setNotice({ message: '', type: '' }), 4000);
+  };
 
   const loadCategories = async () => {
     try {
@@ -45,32 +52,35 @@ export default function ReorderList() {
       setLowStockItems(analyticsRes.lowStockItems || []);
       setCustomOrders(ordersRes || []);
     } catch (err) {
-      console.error('Failed to load reorder list:', err);
+      console.error(err);
     }
   };
 
-  const handleAddCustomOrder = async (e) => {
+  const handleSaveCustomOrder = async (e) => {
     e.preventDefault();
     if (!formData.item_name.trim()) return;
 
-    if (window.api.orders?.add) {
-      await window.api.orders.add({
+    if (window.api.orders?.save) {
+      await window.api.orders.save({
         ...formData,
         category_id: formData.category_id ? parseInt(formData.category_id) : null,
         suggested_qty: parseFloat(formData.suggested_qty) || 1,
         cost_price: parseFloat(formData.cost_price) || 0,
         selling_price: parseFloat(formData.selling_price) || 0,
         tax_rate: parseFloat(formData.tax_rate) || 0,
-        low_stock_threshold: parseFloat(formData.low_stock_threshold) || 5
+        low_stock_threshold: parseFloat(formData.low_stock_threshold) || 5,
+        unit: formData.unit?.trim() || 'pcs'
       });
       setIsModalOpen(false);
       resetForm();
+      showNotice(formData.id ? 'Order item updated!' : 'Custom item added to To-Order list!', 'success');
       loadAllOrders();
     }
   };
 
   const resetForm = () => {
     setFormData({
+      id: null,
       item_name: '',
       category_id: '',
       sku_barcode: '',
@@ -83,24 +93,41 @@ export default function ReorderList() {
     });
   };
 
+  const handleEditCustomOrder = (order) => {
+    setFormData({
+      id: order.id,
+      item_name: order.item_name,
+      category_id: order.category_id || '',
+      sku_barcode: order.sku_barcode || '',
+      cost_price: order.cost_price || 0,
+      selling_price: order.selling_price || 0,
+      tax_rate: order.tax_rate || 0,
+      suggested_qty: order.suggested_qty || 1,
+      low_stock_threshold: order.low_stock_threshold || 5,
+      unit: order.unit || 'pcs'
+    });
+    setIsModalOpen(true);
+  };
+
   const handleMarkAsReceived = async (orderId) => {
-    if (confirm('Mark this item as received? It will be added into your active Inventory Stock.')) {
+    if (window.confirm('Mark this item as received? It will be added into your active Inventory Stock.')) {
       if (window.api.orders?.moveToInventory) {
         const res = await window.api.orders.moveToInventory(orderId);
         if (res.success) {
-          alert('Item successfully added to Inventory Stock!');
+          showNotice('Item successfully moved into Inventory Stock!', 'success');
           loadAllOrders();
         } else {
-          alert('Failed to transfer item: ' + res.error);
+          showNotice(res.error || 'Failed to transfer item.');
         }
       }
     }
   };
 
   const handleDeleteOrder = async (id) => {
-    if (confirm('Delete this item from the order list?')) {
+    if (window.confirm('Delete this item from the order list?')) {
       if (window.api.orders?.delete) {
         await window.api.orders.delete(id);
+        showNotice('Item removed from To-Order list.', 'success');
         loadAllOrders();
       }
     }
@@ -123,6 +150,7 @@ export default function ReorderList() {
         item.category_name || 'General',
         'Auto (Low Stock)',
         `${item.stock_qty} ${item.unit || 'pcs'}`,
+        `Rs.${item.cost_price || 0} / ${item.unit || 'pcs'}`,
         '_________'
       ]);
     });
@@ -134,17 +162,19 @@ export default function ReorderList() {
         order.category_name || 'General',
         'Custom To-Order',
         `${order.suggested_qty} ${order.unit || 'pcs'}`,
+        `Rs.${order.cost_price || 0} / ${order.unit || 'pcs'}`,
         '_________'
       ]);
     });
 
     autoTable(doc, {
       startY: 34,
-      head: [['#', 'Item Name', 'Category', 'Source', 'Current / Needed', 'Order Qty']],
+      head: [['#', 'Item Name', 'Category', 'Source', 'Required / Current', 'Estimated Cost Rate', 'Order Qty']],
       body: rows
     });
 
     doc.save(`Reorder_List_${Date.now()}.pdf`);
+    showNotice('Vendor Reorder PDF downloaded!', 'success');
   };
 
   const totalToOrderItems = lowStockItems.length + customOrders.length;
@@ -183,15 +213,25 @@ export default function ReorderList() {
         </div>
       </div>
 
+      {notice.message && (
+        <div className={`p-3 rounded-lg text-xs font-medium flex items-center gap-2 ${
+          notice.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+        }`}>
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {notice.message}
+        </div>
+      )}
+
       {/* Table Content */}
       <div className="flex-1 bg-white border border-slate-200 rounded-lg overflow-y-auto shadow-xs">
         <table className="w-full text-left text-sm text-slate-600">
-          <thead className="bg-slate-100 text-xs uppercase text-slate-500 sticky top-0">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500 sticky top-0">
             <tr>
               <th className="p-3 text-center w-12">#</th>
               <th className="p-3">Product / Item Name</th>
               <th className="p-3">Category</th>
               <th className="p-3">Type</th>
+              <th className="p-3">Estimated Cost Price</th>
               <th className="p-3">Required / Current Qty</th>
               <th className="p-3 text-right">Actions</th>
             </tr>
@@ -199,7 +239,7 @@ export default function ReorderList() {
           <tbody className="divide-y divide-slate-100">
             {totalToOrderItems === 0 ? (
               <tr>
-                <td colSpan="6" className="p-8 text-center text-slate-400">
+                <td colSpan="7" className="p-8 text-center text-slate-400">
                   <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
                   All inventory healthy. No pending reorder items.
                 </td>
@@ -220,6 +260,7 @@ export default function ReorderList() {
                         Auto (Low Stock)
                       </span>
                     </td>
+                    <td className="p-3 text-slate-500">₹{item.cost_price} <span className="text-xs text-slate-400">/ {item.unit || 'pcs'}</span></td>
                     <td className="p-3 font-bold text-rose-600">
                       {item.stock_qty} {item.unit || 'pcs'} left (Min: {item.low_stock_threshold})
                     </td>
@@ -238,8 +279,16 @@ export default function ReorderList() {
                         Custom To-Order
                       </span>
                     </td>
+                    <td className="p-3 text-slate-500">₹{order.cost_price || 0} <span className="text-xs text-slate-400">/ {order.unit || 'pcs'}</span></td>
                     <td className="p-3 font-medium text-slate-700">{order.suggested_qty} {order.unit || 'pcs'}</td>
-                    <td className="p-3 text-right space-x-2">
+                    <td className="p-3 text-right space-x-1.5">
+                      <button
+                        onClick={() => handleEditCustomOrder(order)}
+                        title="Edit Custom Item Details"
+                        className="p-1 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded"
+                      >
+                        <Edit2 className="h-4 w-4 inline" />
+                      </button>
                       <button
                         onClick={() => handleMarkAsReceived(order.id)}
                         title="Mark as Received (Add to Inventory)"
@@ -249,7 +298,7 @@ export default function ReorderList() {
                       </button>
                       <button
                         onClick={() => handleDeleteOrder(order.id)}
-                        className="text-rose-600 hover:text-rose-900 p-1"
+                        className="text-rose-600 hover:text-rose-900 p-1 hover:bg-rose-50 rounded"
                         title="Delete from list"
                       >
                         <Trash2 className="h-4 w-4 inline" />
@@ -263,15 +312,15 @@ export default function ReorderList() {
         </table>
       </div>
 
-      {/* Modal */}
+      {/* Modal (Add / Edit) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-4">
           <form
-            onSubmit={handleAddCustomOrder}
+            onSubmit={handleSaveCustomOrder}
             className="bg-white p-6 rounded-xl w-[520px] shadow-2xl space-y-4 border border-slate-100"
           >
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-base text-slate-800">Add Item to Order List</h3>
+              <h3 className="font-bold text-base text-slate-800">{formData.id ? 'Edit To-Order Item' : 'Add Item to Order List'}</h3>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
@@ -325,7 +374,7 @@ export default function ReorderList() {
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={formData.cost_price || ''}
                   placeholder="0"
-                  onChange={(e) => setFormData({ ...formData, cost_price: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
                 />
               </div>
 
@@ -338,7 +387,7 @@ export default function ReorderList() {
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-semibold text-slate-900"
                   value={formData.selling_price || ''}
                   placeholder="0"
-                  onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, selling_price: e.target.value })}
                 />
               </div>
 
@@ -350,15 +399,16 @@ export default function ReorderList() {
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={formData.suggested_qty || ''}
                   placeholder="1"
-                  onChange={(e) => setFormData({ ...formData, suggested_qty: parseFloat(e.target.value) || 1 })}
+                  onChange={(e) => setFormData({ ...formData, suggested_qty: e.target.value })}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit of Measure *</label>
                 <input
+                  required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="pcs, kg, packet, litre"
+                  placeholder="pcs, kg, packet, litre, pouch"
                   value={formData.unit || ''}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                 />
@@ -371,7 +421,7 @@ export default function ReorderList() {
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={formData.low_stock_threshold || ''}
                   placeholder="5"
-                  onChange={(e) => setFormData({ ...formData, low_stock_threshold: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, low_stock_threshold: e.target.value })}
                 />
               </div>
 
@@ -382,7 +432,7 @@ export default function ReorderList() {
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={formData.tax_rate || ''}
                   placeholder="0"
-                  onChange={(e) => setFormData({ ...formData, tax_rate: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, tax_rate: e.target.value })}
                 />
               </div>
             </div>
@@ -399,7 +449,7 @@ export default function ReorderList() {
                 type="submit"
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700"
               >
-                Add to To-Order List
+                {formData.id ? 'Update Order Item' : 'Add to To-Order List'}
               </button>
             </div>
           </form>

@@ -1,10 +1,11 @@
 // src/pages/Inventory.jsx
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, AlertTriangle, FolderPlus, X, Package } from 'lucide-react';
+import { Plus, Edit2, Trash2, AlertTriangle, FolderPlus, X, Package, AlertCircle } from 'lucide-react';
 
 export default function Inventory() {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [notice, setNotice] = useState({ message: '', type: '' });
   
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -22,11 +23,15 @@ export default function Inventory() {
 
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
   const [catFormData, setCatFormData] = useState({ name: '', description: '' });
-  const [catError, setCatError] = useState('');
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const showNotice = (message, type = 'error') => {
+    setNotice({ message, type });
+    setTimeout(() => setNotice({ message: '', type: '' }), 4000);
+  };
 
   const loadData = async () => {
     try {
@@ -45,17 +50,30 @@ export default function Inventory() {
     e.preventDefault();
     const payload = {
       ...formData,
-      category_id: formData.category_id ? parseInt(formData.category_id) : null
+      category_id: formData.category_id ? parseInt(formData.category_id) : null,
+      cost_price: parseFloat(formData.cost_price) || 0,
+      selling_price: parseFloat(formData.selling_price) || 0,
+      tax_rate: parseFloat(formData.tax_rate) || 0,
+      stock_qty: parseFloat(formData.stock_qty) || 0,
+      low_stock_threshold: parseFloat(formData.low_stock_threshold) || 5,
+      unit: formData.unit?.trim() || 'pcs'
     };
-    await window.api.inventory.saveItem(payload);
-    setIsItemModalOpen(false);
-    resetItemForm();
-    loadData();
+
+    const res = await window.api.inventory.saveItem(payload);
+    if (res.success) {
+      setIsItemModalOpen(false);
+      resetItemForm();
+      showNotice(formData.id ? 'Product updated successfully!' : 'Product added to stock!', 'success');
+      loadData();
+    } else {
+      showNotice(res.error || 'Failed to save product.');
+    }
   };
 
   const handleDeleteItem = async (id) => {
-    if (confirm('Are you sure you want to delete this product?')) {
+    if (window.confirm('Delete this product permanently from inventory?')) {
       await window.api.inventory.deleteItem(id);
+      showNotice('Product deleted.', 'success');
       loadData();
     }
   };
@@ -82,22 +100,16 @@ export default function Inventory() {
 
   const handleCategorySubmit = async (e) => {
     e.preventDefault();
-    setCatError('');
-    if (!catFormData.name.trim()) {
-      setCatError('Category name is required.');
-      return;
-    }
-    try {
-      const res = await window.api.categories.create(catFormData);
-      if (res.success) {
-        setIsCatModalOpen(false);
-        setCatFormData({ name: '', description: '' });
-        await loadData();
-      } else {
-        setCatError(res.error || 'Failed to add category.');
-      }
-    } catch (err) {
-      setCatError('Error creating category.');
+    if (!catFormData.name.trim()) return;
+
+    const res = await window.api.categories.create(catFormData);
+    if (res.success) {
+      setIsCatModalOpen(false);
+      setCatFormData({ name: '', description: '' });
+      showNotice('Category added successfully!', 'success');
+      await loadData();
+    } else {
+      showNotice(res.error || 'Category creation failed.');
     }
   };
 
@@ -112,11 +124,11 @@ export default function Inventory() {
               Total: {items.length} Products
             </span>
           </div>
-          <p className="text-sm text-slate-500">Manage stock, categories, prices and low-stock alerts.</p>
+          <p className="text-sm text-slate-500">Manage stock, categories, unit prices and low-stock limits.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { setCatError(''); setCatFormData({ name: '', description: '' }); setIsCatModalOpen(true); }}
+            onClick={() => { setCatFormData({ name: '', description: '' }); setIsCatModalOpen(true); }}
             className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3.5 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 transition shadow-xs"
           >
             <FolderPlus className="h-4 w-4 text-indigo-600" /> Add Category
@@ -130,10 +142,19 @@ export default function Inventory() {
         </div>
       </div>
 
+      {notice.message && (
+        <div className={`mb-4 p-3 rounded-lg text-xs font-medium flex items-center gap-2 ${
+          notice.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+        }`}>
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {notice.message}
+        </div>
+      )}
+
       {/* Inventory Table */}
       <div className="flex-1 bg-white border border-slate-200 rounded-lg overflow-y-auto shadow-xs">
         <table className="w-full text-left text-sm text-slate-600">
-          <thead className="bg-slate-100 text-xs uppercase text-slate-500 sticky top-0">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500 sticky top-0">
             <tr>
               <th className="p-3 text-center w-12">#</th>
               <th className="p-3">Item Name</th>
@@ -141,7 +162,7 @@ export default function Inventory() {
               <th className="p-3">Category</th>
               <th className="p-3">Cost Price</th>
               <th className="p-3">Selling Price</th>
-              <th className="p-3">Stock</th>
+              <th className="p-3">Stock Available</th>
               <th className="p-3 text-right">Actions</th>
             </tr>
           </thead>
@@ -164,8 +185,12 @@ export default function Inventory() {
                       {item.category_name || 'General'}
                     </span>
                   </td>
-                  <td className="p-3 text-slate-500">₹{item.cost_price}</td>
-                  <td className="p-3 font-semibold text-slate-900">₹{item.selling_price}</td>
+                  <td className="p-3 text-slate-500">
+                    ₹{item.cost_price} <span className="text-xs text-slate-400">/ {item.unit || 'pcs'}</span>
+                  </td>
+                  <td className="p-3 font-semibold text-slate-900">
+                    ₹{item.selling_price} <span className="text-xs font-normal text-slate-500">/ {item.unit || 'pcs'}</span>
+                  </td>
                   <td className="p-3">
                     <span className={`inline-flex items-center gap-1 font-medium px-2 py-0.5 rounded-full text-xs ${
                       item.stock_qty <= item.low_stock_threshold ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
@@ -217,7 +242,7 @@ export default function Inventory() {
                   <label className="block text-xs font-semibold text-slate-600">Category</label>
                   <button
                     type="button"
-                    onClick={() => { setCatError(''); setIsCatModalOpen(true); }}
+                    onClick={() => setIsCatModalOpen(true)}
                     className="text-[11px] text-indigo-600 hover:underline flex items-center gap-0.5"
                   >
                     <Plus className="h-3 w-3 inline" /> New
@@ -253,7 +278,7 @@ export default function Inventory() {
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={formData.cost_price || ''}
                   placeholder="0"
-                  onChange={(e) => setFormData({ ...formData, cost_price: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
                 />
               </div>
 
@@ -266,7 +291,7 @@ export default function Inventory() {
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-semibold text-slate-900"
                   value={formData.selling_price || ''}
                   placeholder="0"
-                  onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, selling_price: e.target.value })}
                 />
               </div>
 
@@ -277,28 +302,29 @@ export default function Inventory() {
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={formData.stock_qty || ''}
                   placeholder="0"
-                  onChange={(e) => setFormData({ ...formData, stock_qty: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, stock_qty: e.target.value })}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit of Measure *</label>
                 <input
+                  required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="pcs, kg, packet, litre"
+                  placeholder="e.g., pcs, kg, packet, litre, pouch"
                   value={formData.unit || ''}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Low-Stock Alert Threshold</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Low-Stock Alert Limit</label>
                 <input
                   type="number"
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={formData.low_stock_threshold || ''}
                   placeholder="5"
-                  onChange={(e) => setFormData({ ...formData, low_stock_threshold: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, low_stock_threshold: e.target.value })}
                 />
               </div>
 
@@ -309,7 +335,7 @@ export default function Inventory() {
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={formData.tax_rate || ''}
                   placeholder="0"
-                  onChange={(e) => setFormData({ ...formData, tax_rate: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, tax_rate: e.target.value })}
                 />
               </div>
             </div>
@@ -345,10 +371,6 @@ export default function Inventory() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-
-            {catError && (
-              <p className="text-xs text-rose-600 bg-rose-50 p-2 rounded border border-rose-200">{catError}</p>
-            )}
 
             <div className="space-y-3 text-sm">
               <div>

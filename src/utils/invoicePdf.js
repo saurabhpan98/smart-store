@@ -14,7 +14,6 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
     format: [80, 240]
   });
 
-  // Header Title
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
   doc.text(shopName.toUpperCase(), 40, 9, { align: 'center' });
@@ -50,17 +49,16 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
     currentY += 3.5;
   }
 
-  // Payment Mode Indication
   doc.setFont('helvetica', 'bold');
   doc.text(`Payment Mode: ${invoice.payment_mode || 'CASH'}`, 4, currentY);
   doc.setFont('helvetica', 'normal');
   currentY += 3.5;
 
-  // Items Table
+  // Items Table with Unit Breakdown
   const tableRows = invoice.items.map((item, idx) => [
     `${idx + 1}. ${item.name}`,
-    item.qty,
-    item.selling_price,
+    `${item.qty} ${item.unit || 'pcs'}`,
+    `Rs.${item.selling_price}/${item.unit || 'pcs'}`,
     item.discount ? `-Rs.${item.discount}` : '0',
     item.line_total.toFixed(2)
   ]);
@@ -70,7 +68,7 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
     head: [['Item', 'Qty', 'Rate', 'Disc', 'Total']],
     body: tableRows,
     theme: 'plain',
-    styles: { fontSize: 7, cellPadding: 1 },
+    styles: { fontSize: 6.8, cellPadding: 1 },
     headStyles: { fontStyle: 'bold', borderBottom: 0.1 },
     margin: { left: 4, right: 4 }
   });
