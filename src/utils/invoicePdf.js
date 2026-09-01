@@ -11,7 +11,7 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
 
   const doc = new jsPDF({
     unit: 'mm',
-    format: [80, 240]
+    format: [80, 260]
   });
 
   doc.setFontSize(13);
@@ -39,13 +39,18 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
   currentY += 4;
 
   doc.setFontSize(7.5);
-  doc.text(`Invoice: ${invoice.invoice_number}`, 4, currentY);
+  doc.setFont('helvetica', 'bold');
+  doc.text(invoice.is_gst_bill ? 'TAX INVOICE (GST)' : 'RETAIL INVOICE / CASH MEMO', 40, currentY, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  currentY += 4;
+
+  doc.text(`Invoice No: ${invoice.invoice_number}`, 4, currentY);
   currentY += 3.5;
   doc.text(`Date: ${new Date().toLocaleString()}`, 4, currentY);
   currentY += 3.5;
 
   if (invoice.customer_name || invoice.customer_phone) {
-    doc.text(`Customer: ${invoice.customer_name || 'Guest'} (${invoice.customer_phone || 'N/A'})`, 4, currentY);
+    doc.text(`Customer: ${invoice.customer_name || 'Walk-in'} (${invoice.customer_phone || 'N/A'})`, 4, currentY);
     currentY += 3.5;
   }
 
@@ -54,11 +59,11 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
   doc.setFont('helvetica', 'normal');
   currentY += 3.5;
 
-  // Items Table with Unit Breakdown
+  // Items Table
   const tableRows = invoice.items.map((item, idx) => [
     `${idx + 1}. ${item.name}`,
     `${item.qty} ${item.unit || 'pcs'}`,
-    `Rs.${item.selling_price}/${item.unit || 'pcs'}`,
+    `Rs.${item.selling_price}`,
     item.discount ? `-Rs.${item.discount}` : '0',
     item.line_total.toFixed(2)
   ]);
@@ -73,7 +78,7 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
     margin: { left: 4, right: 4 }
   });
 
-  const finalY = doc.lastAutoTable.finalY + 3;
+  let finalY = doc.lastAutoTable.finalY + 3;
   doc.line(4, finalY, 76, finalY);
 
   doc.setFontSize(7.5);
@@ -83,20 +88,41 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
   doc.text(`Total Discount:`, 4, finalY + 7.5);
   doc.text(`- Rs. ${invoice.discount_total.toFixed(2)}`, 76, finalY + 7.5, { align: 'right' });
 
-  doc.text(`Tax / GST:`, 4, finalY + 11);
-  doc.text(`Rs. ${invoice.tax_total.toFixed(2)}`, 76, finalY + 11, { align: 'right' });
+  // GST Breakdown (CGST + SGST) if enabled
+  if (invoice.is_gst_bill && invoice.tax_total > 0) {
+    const halfTax = (invoice.tax_total / 2).toFixed(2);
+    doc.text(`CGST:`, 4, finalY + 11);
+    doc.text(`Rs. ${halfTax}`, 76, finalY + 11, { align: 'right' });
+
+    doc.text(`SGST:`, 4, finalY + 14.5);
+    doc.text(`Rs. ${halfTax}`, 76, finalY + 14.5, { align: 'right' });
+    finalY += 7;
+  } else {
+    doc.text(`Tax / GST:`, 4, finalY + 11);
+    doc.text(`Rs. ${invoice.tax_total.toFixed(2)}`, 76, finalY + 11, { align: 'right' });
+  }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.text(`Grand Total:`, 4, finalY + 16);
   doc.text(`Rs. ${invoice.grand_total.toFixed(2)}`, 76, finalY + 16, { align: 'right' });
 
-  doc.setFontSize(8);
-  doc.text(`Paid Via: ${invoice.payment_mode || 'CASH'}`, 4, finalY + 20.5);
+  // Udhaar / Credit Breakdown
+  if (invoice.is_credit) {
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Paid Amount:`, 4, finalY + 20.5);
+    doc.text(`Rs. ${(invoice.paid_amount || 0).toFixed(2)}`, 76, finalY + 20.5, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Balance Due (Udhaar):`, 4, finalY + 24);
+    doc.text(`Rs. ${(invoice.due_amount || 0).toFixed(2)}`, 76, finalY + 24, { align: 'right' });
+    finalY += 8;
+  }
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
-  doc.text(footerNote, 40, finalY + 26, { align: 'center' });
+  doc.text(footerNote, 40, finalY + 24, { align: 'center' });
 
   doc.save(`${invoice.invoice_number}.pdf`);
 }

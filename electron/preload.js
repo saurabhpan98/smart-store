@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('api', {
   pos: {
     checkout: (data) => ipcRenderer.invoke('pos:checkout', data),
   },
+  credit: {
+    getAll: () => ipcRenderer.invoke('credit:getAll'),
+    settlePayment: (data) => ipcRenderer.invoke('credit:settlePayment', data),
+  },
   analytics: {
     getData: () => ipcRenderer.invoke('analytics:getData'),
   },

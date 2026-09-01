@@ -1,6 +1,6 @@
 // src/pages/POS.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Trash2, ShoppingCart, Send, FileDown, Plus, Package, CheckCircle2, Tag, AlertCircle } from 'lucide-react';
+import { Search, Trash2, ShoppingCart, Send, FileDown, Plus, Package, CheckCircle2, Tag, AlertCircle, FileText, UserCheck } from 'lucide-react';
 import { sendWhatsAppInvoice } from '../utils/whatsapp';
 import { generateInvoicePDF } from '../utils/invoicePdf';
 
@@ -10,10 +10,16 @@ export default function POS() {
   const [search, setSearch] = useState('');
   const [customer, setCustomer] = useState({ name: '', phone: '' });
   
+  // Bill Discount
   const [billDiscountType, setBillDiscountType] = useState('amount');
   const [billDiscountValue, setBillDiscountValue] = useState(0);
   
+  // GST Toggle & Payment / Udhaar State
+  const [isGstBill, setIsGstBill] = useState(false);
+  const [paymentType, setPaymentType] = useState('FULL'); // 'FULL' | 'UDHAAR'
+  const [paidAmount, setPaidAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('CASH');
+
   const [storeSettings, setStoreSettings] = useState({});
   const [feedback, setFeedback] = useState({ message: '', type: '' });
 
@@ -156,16 +162,25 @@ export default function POS() {
   const totalTax = cart.reduce((acc, curr) => acc + (curr.tax * curr.qty), 0);
   const grandTotal = Math.max(0, cartSubtotal + totalTax - overallBillDiscount);
 
+  // Udhaar logic
+  const isCredit = paymentType === 'UDHAAR';
+  const effectivePaid = isCredit ? (parseFloat(paidAmount) || 0) : grandTotal;
+  const dueAmount = isCredit ? Math.max(0, grandTotal - effectivePaid) : 0;
+
   const getInvoicePayload = () => {
     return {
       invoice_number: `INV-${Date.now().toString().slice(-6)}`,
-      customer_name: customer.name || '',
+      customer_name: customer.name || 'Walk-in Customer',
       customer_phone: customer.phone || '',
       subtotal: rawSubtotal,
       discount_total: totalDiscount,
       tax_total: totalTax,
       grand_total: grandTotal,
-      payment_mode: paymentMode,
+      paid_amount: effectivePaid,
+      due_amount: dueAmount,
+      is_credit: isCredit,
+      is_gst_bill: isGstBill,
+      payment_mode: isCredit && effectivePaid === 0 ? 'CREDIT' : paymentMode,
       items: cart
     };
   };
@@ -201,6 +216,11 @@ export default function POS() {
       return;
     }
 
+    if (isCredit && !customer.name.trim()) {
+      showNotice('Customer Name is required for Udhaar (Credit) orders.');
+      return;
+    }
+
     const invoicePayload = getInvoicePayload();
 
     try {
@@ -210,6 +230,8 @@ export default function POS() {
         setCart([]);
         setCustomer({ name: '', phone: '' });
         setBillDiscountValue(0);
+        setPaymentType('FULL');
+        setPaidAmount('');
         loadInventory();
       } else {
         showNotice('Checkout Failed: ' + (res.error || 'Database error'));
@@ -228,7 +250,7 @@ export default function POS() {
 
   return (
     <div className="flex h-screen w-full gap-4 p-4 bg-slate-100 overflow-hidden box-border">
-      {/* Left Pane: Items List View */}
+      {/* Left Pane: Items List */}
       <div className="flex-1 flex flex-col bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
         <div className="p-4 border-b border-slate-100 bg-white flex justify-between items-center gap-4">
           <div className="relative flex-1">
@@ -328,10 +350,24 @@ export default function POS() {
       </div>
 
       {/* Right Pane: Cart & Invoice Checkout */}
-      <div className="w-[420px] flex flex-col bg-white rounded-xl shadow-xs border border-slate-200 p-4 h-full">
-        <h3 className="font-bold text-base flex items-center gap-2 mb-2 text-slate-800 pb-2 border-b">
-          <ShoppingCart className="h-5 w-5 text-indigo-600" /> Current Bill
-        </h3>
+      <div className="w-[430px] flex flex-col bg-white rounded-xl shadow-xs border border-slate-200 p-4 h-full overflow-hidden">
+        <div className="flex justify-between items-center mb-2 pb-2 border-b">
+          <h3 className="font-bold text-base flex items-center gap-2 text-slate-800">
+            <ShoppingCart className="h-5 w-5 text-indigo-600" /> Current Bill
+          </h3>
+          
+          {/* GST Toggle Switch */}
+          <button
+            type="button"
+            onClick={() => setIsGstBill(!isGstBill)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition ${
+              isGstBill ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 border border-slate-300'
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {isGstBill ? 'GST (CGST/SGST)' : 'Non-GST'}
+          </button>
+        </div>
 
         {feedback.message && (
           <div className={`mb-2 p-2 rounded-lg text-xs font-medium flex items-center gap-1.5 ${
@@ -342,11 +378,11 @@ export default function POS() {
           </div>
         )}
 
-        {/* Customer Information */}
-        <div className="space-y-2 mb-3">
+        {/* Customer Details */}
+        <div className="space-y-2 mb-2">
           <input
             type="text"
-            placeholder="Customer Name (Optional)"
+            placeholder="Customer Name (Required for Udhaar)"
             className="w-full text-xs border border-slate-200 p-2 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none"
             value={customer.name || ''}
             onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
@@ -362,7 +398,7 @@ export default function POS() {
         </div>
 
         {/* Cart Item Rows */}
-        <div className="flex-1 overflow-y-auto space-y-2 border-y border-slate-100 py-2 pr-1">
+        <div className="flex-1 overflow-y-auto space-y-1.5 border-y border-slate-100 py-2 pr-1">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs py-8">
               <ShoppingCart className="h-6 w-6 mb-1 text-slate-300" />
@@ -372,7 +408,7 @@ export default function POS() {
             cart.map((item, idx) => (
               <div
                 key={item.id}
-                className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 space-y-1.5"
+                className="p-2 bg-slate-50 rounded-lg border border-slate-100 space-y-1"
               >
                 <div className="flex justify-between items-center text-xs">
                   <div className="flex-1 min-w-0 pr-2">
@@ -399,7 +435,6 @@ export default function POS() {
                   </div>
                 </div>
 
-                {/* Specific Item Discount Control */}
                 <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/60 text-slate-600">
                   <span className="flex items-center gap-1"><Tag className="h-3 w-3 text-indigo-500" /> Item Disc:</span>
                   <div className="flex items-center gap-1">
@@ -434,14 +469,14 @@ export default function POS() {
           )}
         </div>
 
-        {/* Summary Totals */}
-        <div className="pt-3 space-y-1.5 text-xs">
+        {/* Summary Totals & Udhaar Section */}
+        <div className="pt-2 space-y-1.5 text-xs">
           <div className="flex justify-between text-slate-600">
             <span>Subtotal:</span>
             <span>₹{rawSubtotal.toFixed(2)}</span>
           </div>
 
-          <div className="flex justify-between items-center text-slate-600 py-1">
+          <div className="flex justify-between items-center text-slate-600">
             <span className="font-medium">Bill Discount:</span>
             <div className="flex items-center gap-1">
               <input
@@ -471,31 +506,73 @@ export default function POS() {
             </div>
           </div>
 
-          <div className="flex justify-between text-rose-600">
-            <span>Total Discount Applied:</span>
-            <span>- ₹{totalDiscount.toFixed(2)}</span>
-          </div>
-
           <div className="flex justify-between text-slate-600">
-            <span>Tax (GST):</span>
+            <span>{isGstBill ? 'GST Total (CGST+SGST):' : 'Tax Total:'}</span>
             <span>₹{totalTax.toFixed(2)}</span>
           </div>
 
-          <div className="flex justify-between font-bold text-base text-slate-900 border-t border-slate-200 pt-2">
-            <span>Total Payable:</span>
+          <div className="flex justify-between font-bold text-sm text-slate-900 border-t border-slate-200 pt-1.5">
+            <span>Grand Total:</span>
             <span>₹{grandTotal.toFixed(2)}</span>
           </div>
 
+          {/* Payment Type Switch: Full vs Udhaar */}
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="font-semibold text-slate-700 flex items-center gap-1">
+                <UserCheck className="h-3.5 w-3.5 text-indigo-600" /> Payment Type:
+              </span>
+              <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs">
+                <button
+                  type="button"
+                  onClick={() => setPaymentType('FULL')}
+                  className={`px-2.5 py-1 font-semibold ${paymentType === 'FULL' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700'}`}
+                >
+                  Full Paid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentType('UDHAAR')}
+                  className={`px-2.5 py-1 font-semibold ${paymentType === 'UDHAAR' ? 'bg-amber-600 text-white' : 'bg-white text-slate-700'}`}
+                >
+                  Udhaar (Credit)
+                </button>
+              </div>
+            </div>
+
+            {paymentType === 'UDHAAR' && (
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200 text-xs">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">Paid Now (₹):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    className="w-full border border-slate-300 p-1.5 rounded focus:ring-1 focus:ring-amber-500 outline-none bg-white font-semibold"
+                    value={paidAmount}
+                    onChange={(e) => setPaidAmount(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-rose-600 mb-0.5">Udhaar Balance:</label>
+                  <div className="p-1.5 bg-rose-50 border border-rose-200 rounded text-rose-700 font-bold">
+                    ₹{dueAmount.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Payment Mode Selector */}
-          <div className="grid grid-cols-3 gap-1 pt-2">
-            {['CASH', 'UPI', 'CREDIT'].map((mode) => (
+          <div className="grid grid-cols-3 gap-1">
+            {['CASH', 'UPI', 'CARD'].map((mode) => (
               <button
                 key={mode}
                 type="button"
                 onClick={() => setPaymentMode(mode)}
                 className={`py-1 text-xs font-semibold rounded-md border transition ${
                   paymentMode === mode
-                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                    ? 'bg-slate-800 border-slate-800 text-white shadow-xs'
                     : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -504,8 +581,8 @@ export default function POS() {
             ))}
           </div>
 
-          {/* 3 Action Buttons */}
-          <div className="grid grid-cols-3 gap-1.5 pt-2">
+          {/* Action Buttons */}
+          <div className="grid grid-cols-3 gap-1.5 pt-1">
             <button
               type="button"
               onClick={handleDoneCheckout}

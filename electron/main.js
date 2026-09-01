@@ -29,7 +29,7 @@ function createWindow() {
     dbInstance = db;
     dbLocation = dbPath;
   } catch (err) {
-    console.error('Database initialization error:', err);
+    console.error('Database init error:', err);
   }
 
   if (process.env.NODE_ENV === 'development') {
@@ -43,7 +43,7 @@ app.whenReady().then(createWindow);
 
 // --- IPC HANDLERS ---
 
-// 1. Authentication & Flexible Credentials Update
+// Auth
 ipcMain.handle('auth:login', async (_, { username, password }) => {
   const user = dbInstance.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user) return { success: false, message: 'Invalid credentials' };
@@ -57,9 +57,7 @@ ipcMain.handle('auth:changeCredentials', async (_, { currentPassword, newUsernam
   if (!adminUser) return { success: false, message: 'Admin user not found' };
 
   const valid = bcrypt.compareSync(currentPassword, adminUser.password_hash);
-  if (!valid) {
-    return { success: false, message: 'Current password is incorrect' };
-  }
+  if (!valid) return { success: false, message: 'Current password is incorrect' };
 
   const updatedUsername = newUsername && newUsername.trim() ? newUsername.trim() : adminUser.username;
   const updatedHash = newPassword && newPassword.trim() ? bcrypt.hashSync(newPassword.trim(), 10) : adminUser.password_hash;
@@ -67,10 +65,10 @@ ipcMain.handle('auth:changeCredentials', async (_, { currentPassword, newUsernam
   dbInstance.prepare('UPDATE users SET username = ?, password_hash = ? WHERE id = ?')
     .run(updatedUsername, updatedHash, adminUser.id);
 
-  return { success: true, message: 'Admin profile updated successfully', username: updatedUsername };
+  return { success: true, message: 'Credentials updated successfully', username: updatedUsername };
 });
 
-// 2. Inventory Operations
+// Inventory
 ipcMain.handle('inventory:getAll', async () => {
   return dbInstance.prepare(`
     SELECT items.*, categories.name as category_name 
@@ -85,9 +83,7 @@ ipcMain.handle('inventory:saveItem', async (_, item) => {
     if (item.sku_barcode && item.sku_barcode.trim()) {
       const existing = dbInstance.prepare('SELECT id FROM items WHERE sku_barcode = ? AND id != ?')
         .get(item.sku_barcode.trim(), item.id || 0);
-      if (existing) {
-        return { success: false, error: `Barcode '${item.sku_barcode}' already exists for another product.` };
-      }
+      if (existing) return { success: false, error: `Barcode '${item.sku_barcode}' already exists for another product.` };
     }
 
     if (item.id) {
@@ -117,7 +113,7 @@ ipcMain.handle('inventory:deleteItem', async (_, id) => {
   return { success: true };
 });
 
-// 3. Category Operations
+// Categories
 ipcMain.handle('categories:getAll', async () => {
   return dbInstance.prepare('SELECT * FROM categories ORDER BY name ASC').all();
 });
@@ -131,16 +127,29 @@ ipcMain.handle('categories:create', async (_, { name, description }) => {
   }
 });
 
-// 4. POS Checkout
+// POS Checkout (Handles Full Payment & Udhaar / Due amounts)
 ipcMain.handle('pos:checkout', async (_, invoiceData) => {
   const checkoutTransaction = dbInstance.transaction((data) => {
     const invStmt = dbInstance.prepare(`
-      INSERT INTO invoices (invoice_number, customer_name, customer_phone, subtotal, discount_total, tax_total, grand_total, payment_mode)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO invoices (
+        invoice_number, customer_name, customer_phone, subtotal, discount_total, tax_total, 
+        grand_total, paid_amount, due_amount, is_credit, is_gst_bill, payment_mode
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const invResult = invStmt.run(
-      data.invoice_number, data.customer_name || '', data.customer_phone || '',
-      data.subtotal, data.discount_total || 0, data.tax_total || 0, data.grand_total, data.payment_mode
+      data.invoice_number,
+      data.customer_name || 'Walk-in Customer',
+      data.customer_phone || '',
+      data.subtotal,
+      data.discount_total || 0,
+      data.tax_total || 0,
+      data.grand_total,
+      data.paid_amount !== undefined ? data.paid_amount : data.grand_total,
+      data.due_amount || 0,
+      data.is_credit ? 1 : 0,
+      data.is_gst_bill ? 1 : 0,
+      data.payment_mode
     );
     const invoiceId = invResult.lastInsertRowid;
 
@@ -166,11 +175,43 @@ ipcMain.handle('pos:checkout', async (_, invoiceData) => {
   }
 });
 
-// 5. Analytics Queries
+// Udhaar / Khata Ledger Operations
+ipcMain.handle('credit:getAll', async () => {
+  return dbInstance.prepare(`
+    SELECT * FROM invoices 
+    WHERE is_credit = 1 AND due_amount > 0 
+    ORDER BY created_at DESC
+  `).all();
+});
+
+ipcMain.handle('credit:settlePayment', async (_, { invoiceId, paymentAmount }) => {
+  try {
+    const invoice = dbInstance.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+    if (!invoice) return { success: false, error: 'Invoice not found' };
+
+    const newPaid = invoice.paid_amount + paymentAmount;
+    const newDue = Math.max(0, invoice.grand_total - newPaid);
+    const isCreditStill = newDue > 0 ? 1 : 0;
+
+    dbInstance.prepare(`
+      UPDATE invoices 
+      SET paid_amount = ?, due_amount = ?, is_credit = ? 
+      WHERE id = ?
+    `).run(newPaid, newDue, isCreditStill, invoiceId);
+
+    return { success: true, remainingDue: newDue };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Analytics
 ipcMain.handle('analytics:getData', async () => {
   const summary = dbInstance.prepare(`
     SELECT 
       COALESCE(SUM(grand_total), 0) as total_revenue,
+      COALESCE(SUM(paid_amount), 0) as total_collected,
+      COALESCE(SUM(due_amount), 0) as total_udhaar_pending,
       COALESCE(SUM(grand_total - (SELECT SUM(unit_cost_price * quantity) FROM invoice_items WHERE invoice_items.invoice_id = invoices.id)), 0) as total_profit,
       (SELECT COUNT(*) FROM invoices) as total_orders
     FROM invoices
@@ -192,7 +233,7 @@ ipcMain.handle('analytics:getData', async () => {
   return { summary, topSelling, lowStockItems };
 });
 
-// 6. Database Backup
+// Database Backup
 ipcMain.handle('db:backup', async () => {
   const { filePath } = await dialog.showSaveDialog({
     title: 'Backup Database',
@@ -206,7 +247,7 @@ ipcMain.handle('db:backup', async () => {
   return { success: false };
 });
 
-// 7. Orders & Custom Reorder Handling (with Edit & Safe Move)
+// Orders & Custom Reorder
 ipcMain.handle('orders:getAll', async () => {
   return dbInstance.prepare(`
     SELECT purchase_orders.*, categories.name as category_name
@@ -248,13 +289,12 @@ ipcMain.handle('orders:moveToInventory', async (_, orderId) => {
     const order = dbInstance.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(orderId);
     if (!order) return { success: false, error: 'Order not found' };
 
-    // Check Barcode Conflict
     if (order.sku_barcode && order.sku_barcode.trim()) {
       const conflict = dbInstance.prepare('SELECT id, name FROM items WHERE sku_barcode = ?').get(order.sku_barcode.trim());
       if (conflict) {
         return { 
           success: false, 
-          error: `Barcode '${order.sku_barcode}' is already assigned to item '${conflict.name}'. Please edit the custom item barcode first.` 
+          error: `Barcode '${order.sku_barcode}' is already assigned to item '${conflict.name}'.` 
         };
       }
     }
@@ -292,7 +332,7 @@ ipcMain.handle('orders:delete', async (_, id) => {
   return { success: true };
 });
 
-// 8. Store Settings
+// Settings
 ipcMain.handle('settings:get', async () => {
   return dbInstance.prepare('SELECT * FROM store_settings WHERE id = 1').get();
 });
@@ -314,7 +354,7 @@ ipcMain.handle('settings:update', async (_, settings) => {
   return { success: true };
 });
 
-// 9. External Link Opener
+// Shell External
 ipcMain.handle('shell:openExternal', async (_, url) => {
   await shell.openExternal(url);
   return { success: true };

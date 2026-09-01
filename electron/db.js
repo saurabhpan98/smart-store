@@ -10,7 +10,7 @@ function initDatabase(userDataPath) {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
-  // Users
+  // 1. Users
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +27,7 @@ function initDatabase(userDataPath) {
     db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run('admin', defaultHash);
   }
 
-  // Categories
+  // 2. Categories
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +37,7 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // Items
+  // 3. Items
   db.exec(`
     CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +54,7 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // Invoices
+  // 4. Invoices (With Udhaar Ledger & GST toggle fields)
   db.exec(`
     CREATE TABLE IF NOT EXISTS invoices (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,12 +65,17 @@ function initDatabase(userDataPath) {
       discount_total REAL DEFAULT 0,
       tax_total REAL DEFAULT 0,
       grand_total REAL NOT NULL,
-      payment_mode TEXT CHECK(payment_mode IN ('CASH', 'UPI', 'CARD', 'SPLIT', 'CREDIT')),
+      paid_amount REAL DEFAULT 0,
+      due_amount REAL DEFAULT 0,
+      is_credit INTEGER DEFAULT 0,
+      is_gst_bill INTEGER DEFAULT 0,
+      payment_mode TEXT CHECK(payment_mode IN ('CASH', 'UPI', 'CARD', 'CREDIT', 'SPLIT')),
+      status TEXT DEFAULT 'COMPLETED',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
-  // Invoice Items
+  // 5. Invoice Items
   db.exec(`
     CREATE TABLE IF NOT EXISTS invoice_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +91,7 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // Purchase Reorder List (Updated with full item specifications)
+  // 6. Purchase Reorder List
   db.exec(`
     CREATE TABLE IF NOT EXISTS purchase_orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,7 +110,7 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // Store Settings (Default Name: Smart Store)
+  // 7. Store Settings (GSTIN support)
   db.exec(`
     CREATE TABLE IF NOT EXISTS store_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
