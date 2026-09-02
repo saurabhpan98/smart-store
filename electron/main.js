@@ -29,7 +29,7 @@ function createWindow() {
     dbInstance = db;
     dbLocation = dbPath;
   } catch (err) {
-    console.error('Database init error:', err);
+    console.error('Database initialization error:', err);
   }
 
   if (process.env.NODE_ENV === 'development') {
@@ -68,7 +68,7 @@ ipcMain.handle('auth:changeCredentials', async (_, { currentPassword, newUsernam
   return { success: true, message: 'Credentials updated successfully', username: updatedUsername };
 });
 
-// Inventory
+// Inventory (With Batch & Expiry)
 ipcMain.handle('inventory:getAll', async () => {
   return dbInstance.prepare(`
     SELECT items.*, categories.name as category_name 
@@ -78,7 +78,6 @@ ipcMain.handle('inventory:getAll', async () => {
   `).all();
 });
 
-// Inventory saveItem (Handles salts)
 ipcMain.handle('inventory:saveItem', async (_, item) => {
   try {
     if (item.sku_barcode && item.sku_barcode.trim()) {
@@ -91,19 +90,19 @@ ipcMain.handle('inventory:saveItem', async (_, item) => {
 
     if (item.id) {
       const stmt = dbInstance.prepare(`
-        UPDATE items SET category_id=?, name=?, salts=?, sku_barcode=?, cost_price=?, 
+        UPDATE items SET category_id=?, name=?, salts=?, batch_no=?, expiry_date=?, sku_barcode=?, cost_price=?, 
         selling_price=?, tax_rate=?, stock_qty=?, low_stock_threshold=?, unit=?, updated_at=CURRENT_TIMESTAMP
         WHERE id=?
       `);
-      stmt.run(item.category_id || null, item.name, saltsStr, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
-               item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs', item.id);
+      stmt.run(item.category_id || null, item.name, saltsStr, item.batch_no || '', item.expiry_date || '', item.sku_barcode || null, 
+               item.cost_price || 0, item.selling_price || 0, item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs', item.id);
     } else {
       const stmt = dbInstance.prepare(`
-        INSERT INTO items (category_id, name, salts, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO items (category_id, name, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      stmt.run(item.category_id || null, item.name, saltsStr, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
-               item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs');
+      stmt.run(item.category_id || null, item.name, saltsStr, item.batch_no || '', item.expiry_date || '', item.sku_barcode || null, 
+               item.cost_price || 0, item.selling_price || 0, item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs');
     }
     return { success: true };
   } catch (err) {
@@ -116,7 +115,40 @@ ipcMain.handle('inventory:deleteItem', async (_, id) => {
   return { success: true };
 });
 
-// Categories
+// Bulk Import from Excel/CSV (Feature 6)
+ipcMain.handle('inventory:bulkImport', async (_, itemsList) => {
+  const insertTx = dbInstance.transaction((items) => {
+    const insertStmt = dbInstance.prepare(`
+      INSERT OR REPLACE INTO items (category_id, name, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const item of items) {
+      insertStmt.run(
+        item.category_id || null,
+        item.name || 'Unnamed Product',
+        item.salts || '',
+        item.batch_no || '',
+        item.expiry_date || '',
+        item.sku_barcode || null,
+        parseFloat(item.cost_price) || 0,
+        parseFloat(item.selling_price) || 0,
+        parseFloat(item.tax_rate) || 0,
+        parseFloat(item.stock_qty) || 0,
+        parseFloat(item.low_stock_threshold) || 5,
+        item.unit || 'pcs'
+      );
+    }
+  });
+
+  try {
+    insertTx(itemsList);
+    return { success: true, count: itemsList.length };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Categories Handlers
 ipcMain.handle('categories:getAll', async () => {
   return dbInstance.prepare(`
     SELECT categories.*, 
@@ -147,7 +179,6 @@ ipcMain.handle('categories:update', async (_, { id, name, description }) => {
 ipcMain.handle('categories:delete', async (_, id) => {
   try {
     const deleteTx = dbInstance.transaction(() => {
-      // Clear references in items and purchase orders
       dbInstance.prepare('UPDATE items SET category_id = NULL WHERE category_id = ?').run(id);
       dbInstance.prepare('UPDATE purchase_orders SET category_id = NULL WHERE category_id = ?').run(id);
       dbInstance.prepare('DELETE FROM categories WHERE id = ?').run(id);
@@ -159,7 +190,7 @@ ipcMain.handle('categories:delete', async (_, id) => {
   }
 });
 
-// POS Checkout (Handles Full Payment & Udhaar / Due amounts)
+// POS Checkout
 ipcMain.handle('pos:checkout', async (_, invoiceData) => {
   const checkoutTransaction = dbInstance.transaction((data) => {
     const invStmt = dbInstance.prepare(`
@@ -186,13 +217,16 @@ ipcMain.handle('pos:checkout', async (_, invoiceData) => {
     const invoiceId = invResult.lastInsertRowid;
 
     const itemStmt = dbInstance.prepare(`
-      INSERT INTO invoice_items (invoice_id, item_id, item_name, quantity, unit_cost_price, unit_selling_price, discount_amount, tax_amount, line_total)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO invoice_items (invoice_id, item_id, item_name, batch_no, expiry_date, quantity, unit_cost_price, unit_selling_price, discount_amount, tax_amount, line_total)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const stockStmt = dbInstance.prepare(`UPDATE items SET stock_qty = stock_qty - ? WHERE id = ?`);
 
     for (const item of data.items) {
-      itemStmt.run(invoiceId, item.id, item.name, item.qty, item.cost_price || 0, item.selling_price, item.discount || 0, item.tax || 0, item.line_total);
+      itemStmt.run(
+        invoiceId, item.id, item.name, item.batch_no || '', item.expiry_date || '', item.qty,
+        item.cost_price || 0, item.selling_price, item.discount || 0, item.tax || 0, item.line_total
+      );
       stockStmt.run(item.qty, item.id);
     }
 
@@ -207,7 +241,7 @@ ipcMain.handle('pos:checkout', async (_, invoiceData) => {
   }
 });
 
-// Udhaar / Khata Ledger Operations
+// Customer Khata / Udhaar
 ipcMain.handle('credit:getAll', async () => {
   return dbInstance.prepare(`
     SELECT * FROM invoices 
@@ -237,10 +271,76 @@ ipcMain.handle('credit:settlePayment', async (_, { invoiceId, paymentAmount }) =
   }
 });
 
-// Analytics
-// electron/main.js
+// Expenses Handlers (Feature 5)
+ipcMain.handle('expenses:getAll', async () => {
+  return dbInstance.prepare('SELECT * FROM expenses ORDER BY expense_date DESC, created_at DESC').all();
+});
+
+ipcMain.handle('expenses:add', async (_, { category, amount, notes, expense_date }) => {
+  const stmt = dbInstance.prepare(`
+    INSERT INTO expenses (category, amount, notes, expense_date)
+    VALUES (?, ?, ?, COALESCE(?, DATE('now', 'localtime')))
+  `);
+  stmt.run(category, parseFloat(amount) || 0, notes || '', expense_date || null);
+  return { success: true };
+});
+
+ipcMain.handle('expenses:delete', async (_, id) => {
+  dbInstance.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+  return { success: true };
+});
+
+// Daily Cash Register Shift Handlers (Feature 4)
+ipcMain.handle('register:getToday', async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  let register = dbInstance.prepare('SELECT * FROM daily_registers WHERE register_date = ?').get(today);
+  if (!register) {
+    dbInstance.prepare(`INSERT INTO daily_registers (register_date, opening_cash, status) VALUES (?, 0, 'OPEN')`).run(today);
+    register = dbInstance.prepare('SELECT * FROM daily_registers WHERE register_date = ?').get(today);
+  }
+
+  // Calculate today's cash collections, upi, and expenses
+  const cashSales = dbInstance.prepare(`
+    SELECT COALESCE(SUM(paid_amount), 0) as total
+    FROM invoices 
+    WHERE DATE(created_at, 'localtime') = ? AND payment_mode = 'CASH'
+  `).get(today);
+
+  const upiSales = dbInstance.prepare(`
+    SELECT COALESCE(SUM(paid_amount), 0) as total
+    FROM invoices 
+    WHERE DATE(created_at, 'localtime') = ? AND payment_mode = 'UPI'
+  `).get(today);
+
+  const todayExpenses = dbInstance.prepare(`
+    SELECT COALESCE(SUM(amount), 0) as total
+    FROM expenses 
+    WHERE expense_date = ?
+  `).get(today);
+
+  const expectedCash = (register.opening_cash || 0) + cashSales.total - todayExpenses.total;
+
+  return {
+    register,
+    cashSales: cashSales.total,
+    upiSales: upiSales.total,
+    expenses: todayExpenses.total,
+    expectedCash
+  };
+});
+
+ipcMain.handle('register:update', async (_, { opening_cash, closing_cash, status, notes }) => {
+  const today = new Date().toISOString().slice(0, 10);
+  dbInstance.prepare(`
+    UPDATE daily_registers 
+    SET opening_cash = ?, closing_cash = ?, status = ?, notes = ?
+    WHERE register_date = ?
+  `).run(opening_cash, closing_cash, status, notes, today);
+  return { success: true };
+});
+
+// Analytics (Net Profit with Expenses & Expiry Alerts)
 ipcMain.handle('analytics:getData', async () => {
-  // 1. Invoices & Sales Metrics (Excluding GST from Net Profit)
   const salesSummary = dbInstance.prepare(`
     SELECT 
       COALESCE(SUM(grand_total), 0) as gross_revenue,
@@ -253,8 +353,7 @@ ipcMain.handle('analytics:getData', async () => {
           (SELECT SUM(unit_cost_price * quantity) 
            FROM invoice_items 
            WHERE invoice_items.invoice_id = invoices.id)
-        ), 
-        0
+        ), 0
       ) as sold_goods_cost,
       COALESCE(
         SUM(
@@ -263,14 +362,15 @@ ipcMain.handle('analytics:getData', async () => {
             FROM invoice_items 
             WHERE invoice_items.invoice_id = invoices.id
           )
-        ), 
-        0
-      ) as total_profit,
+        ), 0
+      ) as gross_profit,
       (SELECT COUNT(*) FROM invoices) as total_orders
     FROM invoices
   `).get();
 
-  // 2. Current Inventory Valuation (Total Wholesaler Cost Paid)
+  const totalExpenses = dbInstance.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses`).get();
+  const netPocketProfit = salesSummary.gross_profit - totalExpenses.total;
+
   const inventorySummary = dbInstance.prepare(`
     SELECT 
       COALESCE(SUM(cost_price * stock_qty), 0) as total_inventory_cost,
@@ -279,7 +379,6 @@ ipcMain.handle('analytics:getData', async () => {
     FROM items
   `).get();
 
-  // 3. Top 5 Best Selling Items
   const topSelling = dbInstance.prepare(`
     SELECT item_name, SUM(quantity) as units_sold, SUM(line_total) as revenue 
     FROM invoice_items 
@@ -287,7 +386,6 @@ ipcMain.handle('analytics:getData', async () => {
     ORDER BY units_sold DESC LIMIT 5
   `).all();
 
-  // 4. Low Stock Alerts
   const lowStockItems = dbInstance.prepare(`
     SELECT items.*, categories.name as category_name 
     FROM items 
@@ -295,13 +393,26 @@ ipcMain.handle('analytics:getData', async () => {
     WHERE stock_qty <= low_stock_threshold
   `).all();
 
+  // Expiring in next 45 days or expired (Feature 1)
+  const expiringItems = dbInstance.prepare(`
+    SELECT items.*, categories.name as category_name 
+    FROM items 
+    LEFT JOIN categories ON items.category_id = categories.id
+    WHERE expiry_date IS NOT NULL AND expiry_date != '' 
+      AND expiry_date <= DATE('now', '+45 days')
+    ORDER BY expiry_date ASC
+  `).all();
+
   return {
     summary: {
       ...salesSummary,
-      ...inventorySummary
+      ...inventorySummary,
+      total_expenses: totalExpenses.total,
+      net_pocket_profit: netPocketProfit
     },
     topSelling,
-    lowStockItems
+    lowStockItems,
+    expiringItems
   };
 });
 
@@ -319,7 +430,7 @@ ipcMain.handle('db:backup', async () => {
   return { success: false };
 });
 
-// Orders & Custom Reorder
+// Reorder & Custom Orders
 ipcMain.handle('orders:getAll', async () => {
   return dbInstance.prepare(`
     SELECT purchase_orders.*, categories.name as category_name
@@ -329,28 +440,27 @@ ipcMain.handle('orders:getAll', async () => {
   `).all();
 });
 
-// Orders save & moveToInventory (Handles salts)
 ipcMain.handle('orders:save', async (_, order) => {
   const saltsStr = Array.isArray(order.salts) ? order.salts.filter(Boolean).join(' + ') : (order.salts || '');
   if (order.id) {
     const stmt = dbInstance.prepare(`
       UPDATE purchase_orders 
-      SET category_id=?, item_name=?, salts=?, sku_barcode=?, cost_price=?, selling_price=?, tax_rate=?, suggested_qty=?, low_stock_threshold=?, unit=?
+      SET category_id=?, item_name=?, salts=?, batch_no=?, expiry_date=?, sku_barcode=?, cost_price=?, selling_price=?, tax_rate=?, suggested_qty=?, low_stock_threshold=?, unit=?
       WHERE id=?
     `);
     stmt.run(
-      order.category_id || null, order.item_name, saltsStr, order.sku_barcode || null,
+      order.category_id || null, order.item_name, saltsStr, order.batch_no || '', order.expiry_date || '', order.sku_barcode || null,
       order.cost_price || 0, order.selling_price || 0, order.tax_rate || 0,
       order.suggested_qty || 1, order.low_stock_threshold || 5, order.unit || 'pcs',
       order.id
     );
   } else {
     const stmt = dbInstance.prepare(`
-      INSERT INTO purchase_orders (category_id, item_name, salts, sku_barcode, cost_price, selling_price, tax_rate, suggested_qty, low_stock_threshold, unit, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+      INSERT INTO purchase_orders (category_id, item_name, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, suggested_qty, low_stock_threshold, unit, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
     `);
     stmt.run(
-      order.category_id || null, order.item_name, saltsStr, order.sku_barcode || null,
+      order.category_id || null, order.item_name, saltsStr, order.batch_no || '', order.expiry_date || '', order.sku_barcode || null,
       order.cost_price || 0, order.selling_price || 0, order.tax_rate || 0,
       order.suggested_qty || 1, order.low_stock_threshold || 5, order.unit || 'pcs'
     );
@@ -365,28 +475,19 @@ ipcMain.handle('orders:moveToInventory', async (_, orderId) => {
 
     if (order.sku_barcode && order.sku_barcode.trim()) {
       const conflict = dbInstance.prepare('SELECT id, name FROM items WHERE sku_barcode = ?').get(order.sku_barcode.trim());
-      if (conflict) {
-        return { success: false, error: `Barcode '${order.sku_barcode}' already exists for item '${conflict.name}'.` };
-      }
+      if (conflict) return { success: false, error: `Barcode '${order.sku_barcode}' already exists for item '${conflict.name}'.` };
     }
 
     const transferTx = dbInstance.transaction(() => {
       const insertStmt = dbInstance.prepare(`
-        INSERT INTO items (category_id, name, salts, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO items (category_id, name, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       insertStmt.run(
-        order.category_id || null,
-        order.item_name,
-        order.salts || '',
-        order.sku_barcode || null,
-        order.cost_price || 0,
-        order.selling_price || 0,
-        order.tax_rate || 0,
-        order.suggested_qty || 0,
-        order.low_stock_threshold || 5,
-        order.unit || 'pcs'
+        order.category_id || null, order.item_name, order.salts || '', order.batch_no || '', order.expiry_date || '',
+        order.sku_barcode || null, order.cost_price || 0, order.selling_price || 0,
+        order.tax_rate || 0, order.suggested_qty || 0, order.low_stock_threshold || 5, order.unit || 'pcs'
       );
 
       dbInstance.prepare('DELETE FROM purchase_orders WHERE id = ?').run(orderId);
@@ -404,7 +505,7 @@ ipcMain.handle('orders:delete', async (_, id) => {
   return { success: true };
 });
 
-// Settings
+// Settings (with upi_id)
 ipcMain.handle('settings:get', async () => {
   return dbInstance.prepare('SELECT * FROM store_settings WHERE id = 1').get();
 });
@@ -412,16 +513,12 @@ ipcMain.handle('settings:get', async () => {
 ipcMain.handle('settings:update', async (_, settings) => {
   const stmt = dbInstance.prepare(`
     UPDATE store_settings 
-    SET shop_name=?, owner_name=?, phone=?, address=?, gstin=?, receipt_footer=?
+    SET shop_name=?, owner_name=?, phone=?, address=?, gstin=?, upi_id=?, receipt_footer=?
     WHERE id = 1
   `);
   stmt.run(
-    settings.shop_name,
-    settings.owner_name,
-    settings.phone,
-    settings.address,
-    settings.gstin,
-    settings.receipt_footer
+    settings.shop_name, settings.owner_name, settings.phone,
+    settings.address, settings.gstin, settings.upi_id || '', settings.receipt_footer
   );
   return { success: true };
 });

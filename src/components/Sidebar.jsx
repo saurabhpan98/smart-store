@@ -1,6 +1,6 @@
 // src/components/Sidebar.jsx
 import React from 'react';
-import { ShoppingCart, Package, ShoppingBag, BarChart3, Settings as SettingsIcon, LogOut, Store, BookOpen } from 'lucide-react';
+import { ShoppingCart, Package, ShoppingBag, BarChart3, Settings as SettingsIcon, LogOut, Store, BookOpen, Receipt, Landmark } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, onLogout, user, shopName }) {
   const menuItems = [
@@ -8,6 +8,8 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout, user, shopN
     { id: 'inventory', label: 'Inventory Stock', icon: Package },
     { id: 'reorder', label: 'To-Order List', icon: ShoppingBag },
     { id: 'khata', label: 'Customer Khata (Udhaar)', icon: BookOpen },
+    { id: 'register', label: 'Daily Cash Register', icon: Landmark },
+    { id: 'expenses', label: 'Store Expenses', icon: Receipt },
     { id: 'analytics', label: 'Reports & Analytics', icon: BarChart3 },
     { id: 'settings', label: 'Store Settings', icon: SettingsIcon },
   ];

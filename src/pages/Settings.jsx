@@ -1,6 +1,6 @@
 // src/pages/Settings.jsx
 import React, { useState, useEffect } from 'react';
-import { Store, Save, CheckCircle2, ShieldCheck, KeyRound, AlertCircle } from 'lucide-react';
+import { Store, Save, CheckCircle2, ShieldCheck, KeyRound, AlertCircle, QrCode } from 'lucide-react';
 
 export default function Settings({ onSettingsUpdated }) {
   const [settings, setSettings] = useState({
@@ -9,11 +9,11 @@ export default function Settings({ onSettingsUpdated }) {
     phone: '',
     address: '',
     gstin: '',
+    upi_id: '',
     receipt_footer: ''
   });
   const [saved, setSaved] = useState(false);
 
-  // Admin Credentials State (Optional Independent Fields)
   const [credForm, setCredForm] = useState({
     currentPassword: '',
     newUsername: '',
@@ -48,12 +48,12 @@ export default function Settings({ onSettingsUpdated }) {
     setCredStatus({ message: '', type: '' });
 
     if (!credForm.currentPassword) {
-      setCredStatus({ message: 'Current password is required to authorize changes.', type: 'error' });
+      setCredStatus({ message: 'Current password is required.', type: 'error' });
       return;
     }
 
     if (!credForm.newUsername.trim() && !credForm.newPassword.trim()) {
-      setCredStatus({ message: 'Please enter a new Username OR a new Password to update.', type: 'error' });
+      setCredStatus({ message: 'Please enter a new Username OR Password.', type: 'error' });
       return;
     }
 
@@ -90,7 +90,7 @@ export default function Settings({ onSettingsUpdated }) {
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-800">Store Profile & Settings</h1>
-            <p className="text-xs text-slate-500">Configure your shop name and details displayed on bills & receipts.</p>
+            <p className="text-xs text-slate-500">Shop name, GSTIN, and UPI ID for dynamic Scan-to-Pay QR code.</p>
           </div>
         </div>
 
@@ -123,7 +123,7 @@ export default function Settings({ onSettingsUpdated }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Store Phone Number</label>
               <input
@@ -134,12 +134,24 @@ export default function Settings({ onSettingsUpdated }) {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">GSTIN / Tax ID (Optional)</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">GSTIN / Tax ID</label>
               <input
                 type="text"
                 className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                 value={settings.gstin || ''}
                 onChange={(e) => setSettings({ ...settings, gstin: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-indigo-700 mb-1 flex items-center gap-1">
+                <QrCode className="h-3.5 w-3.5" /> UPI ID (For Bill QR)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. yourstore@okhdfcbank"
+                className="w-full border border-indigo-200 bg-indigo-50/20 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                value={settings.upi_id || ''}
+                onChange={(e) => setSettings({ ...settings, upi_id: e.target.value })}
               />
             </div>
           </div>
@@ -175,7 +187,7 @@ export default function Settings({ onSettingsUpdated }) {
         </form>
       </div>
 
-      {/* 2. Admin Username & Password Change */}
+      {/* 2. Security */}
       <div className="max-w-3xl bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-6">
         <div className="flex items-center gap-3 border-b pb-4">
           <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg">
@@ -183,7 +195,7 @@ export default function Settings({ onSettingsUpdated }) {
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-800">Admin Login Security</h2>
-            <p className="text-xs text-slate-500">Update username, password, or both. Leave blank what you don't want to change.</p>
+            <p className="text-xs text-slate-500">Update username, password, or both independently.</p>
           </div>
         </div>
 
@@ -198,11 +210,11 @@ export default function Settings({ onSettingsUpdated }) {
 
         <form onSubmit={handleCredentialsSubmit} className="space-y-4 text-sm">
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Current Password (Required) *</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Current Password *</label>
             <input
               required
               type="password"
-              placeholder="Enter current password to verify identity"
+              placeholder="Verify identity"
               className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
               value={credForm.currentPassword || ''}
               onChange={(e) => setCredForm({ ...credForm, currentPassword: e.target.value })}
@@ -213,7 +225,7 @@ export default function Settings({ onSettingsUpdated }) {
             <label className="block text-xs font-semibold text-slate-600 mb-1">New Username (Optional)</label>
             <input
               type="text"
-              placeholder="Leave empty if you don't want to change username"
+              placeholder="Leave empty if unchanged"
               className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
               value={credForm.newUsername || ''}
               onChange={(e) => setCredForm({ ...credForm, newUsername: e.target.value })}

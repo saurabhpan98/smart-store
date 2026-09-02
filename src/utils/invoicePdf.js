@@ -1,17 +1,19 @@
 // src/utils/invoicePdf.js
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import QRCode from 'qrcode';
 
-export function generateInvoicePDF(invoice, storeInfo = {}) {
+export async function generateInvoicePDF(invoice, storeInfo = {}) {
   const shopName = storeInfo.shop_name || 'Smart Store';
   const phone = storeInfo.phone || '';
   const address = storeInfo.address || '';
   const gstin = storeInfo.gstin || '';
+  const upiId = storeInfo.upi_id || '';
   const footerNote = storeInfo.receipt_footer || 'Thank you for shopping with us!';
 
   const doc = new jsPDF({
     unit: 'mm',
-    format: [80, 260]
+    format: [80, 280]
   });
 
   doc.setFontSize(13);
@@ -59,18 +61,22 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
   doc.setFont('helvetica', 'normal');
   currentY += 3.5;
 
-  // Items Table
-  const tableRows = invoice.items.map((item, idx) => [
-    `${idx + 1}. ${item.name}`,
-    `${item.qty} ${item.unit || 'pcs'}`,
-    `Rs.${item.selling_price}`,
-    item.discount ? `-Rs.${item.discount}` : '0',
-    item.line_total.toFixed(2)
-  ]);
+  // Items Table (with Batch No)
+  const tableRows = invoice.items.map((item, idx) => {
+    let nameText = `${idx + 1}. ${item.name}`;
+    if (item.batch_no) nameText += `\nB:${item.batch_no} Exp:${item.expiry_date || 'N/A'}`;
+    return [
+      nameText,
+      `${item.qty} ${item.unit || 'pcs'}`,
+      `Rs.${item.selling_price}`,
+      item.discount ? `-Rs.${item.discount}` : '0',
+      item.line_total.toFixed(2)
+    ];
+  });
 
   autoTable(doc, {
     startY: currentY + 1,
-    head: [['Item', 'Qty', 'Rate', 'Disc', 'Total']],
+    head: [['Item & Batch', 'Qty', 'Rate', 'Disc', 'Total']],
     body: tableRows,
     theme: 'plain',
     styles: { fontSize: 6.8, cellPadding: 1 },
@@ -88,12 +94,10 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
   doc.text(`Total Discount:`, 4, finalY + 7.5);
   doc.text(`- Rs. ${invoice.discount_total.toFixed(2)}`, 76, finalY + 7.5, { align: 'right' });
 
-  // GST Breakdown (CGST + SGST) if enabled
   if (invoice.is_gst_bill && invoice.tax_total > 0) {
     const halfTax = (invoice.tax_total / 2).toFixed(2);
     doc.text(`CGST:`, 4, finalY + 11);
     doc.text(`Rs. ${halfTax}`, 76, finalY + 11, { align: 'right' });
-
     doc.text(`SGST:`, 4, finalY + 14.5);
     doc.text(`Rs. ${halfTax}`, 76, finalY + 14.5, { align: 'right' });
     finalY += 7;
@@ -107,7 +111,6 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
   doc.text(`Grand Total:`, 4, finalY + 16);
   doc.text(`Rs. ${invoice.grand_total.toFixed(2)}`, 76, finalY + 16, { align: 'right' });
 
-  // Udhaar / Credit Breakdown
   if (invoice.is_credit) {
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
@@ -120,9 +123,26 @@ export function generateInvoicePDF(invoice, storeInfo = {}) {
     finalY += 8;
   }
 
+  // Feature 2: Dynamic UPI Scan & Pay QR Code
+  if (upiId && invoice.grand_total > 0) {
+    try {
+      const payableAmount = invoice.is_credit ? (invoice.due_amount || invoice.grand_total) : invoice.grand_total;
+      const upiPayString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName)}&am=${payableAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(invoice.invoice_number)}`;
+      const qrDataUrl = await QRCode.toDataURL(upiPayString, { width: 100, margin: 1 });
+
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Scan to Pay with Any UPI App:', 40, finalY + 23, { align: 'center' });
+      doc.addImage(qrDataUrl, 'PNG', 27.5, finalY + 25, 25, 25);
+      finalY += 31;
+    } catch (err) {
+      console.error('QR Generation failed', err);
+    }
+  }
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
-  doc.text(footerNote, 40, finalY + 24, { align: 'center' });
+  doc.text(footerNote, 40, finalY + 23, { align: 'center' });
 
   doc.save(`${invoice.invoice_number}.pdf`);
 }

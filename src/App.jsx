@@ -6,6 +6,8 @@ import POS from './pages/POS';
 import Inventory from './pages/Inventory';
 import ReorderList from './pages/ReorderList';
 import CustomerKhata from './pages/CustomerKhata';
+import DayEndRegister from './pages/DayEndRegister';
+import Expenses from './pages/Expenses';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 
@@ -40,6 +42,8 @@ export default function App() {
         {activeTab === 'inventory' && <Inventory />}
         {activeTab === 'reorder' && <ReorderList />}
         {activeTab === 'khata' && <CustomerKhata />}
+        {activeTab === 'register' && <DayEndRegister />}
+        {activeTab === 'expenses' && <Expenses />}
         {activeTab === 'analytics' && <Analytics />}
         {activeTab === 'settings' && (
           <Settings onSettingsUpdated={(s) => setShopName(s.shop_name)} />

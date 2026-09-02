@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
     getAll: () => ipcRenderer.invoke('inventory:getAll'),
     saveItem: (item) => ipcRenderer.invoke('inventory:saveItem', item),
     deleteItem: (id) => ipcRenderer.invoke('inventory:deleteItem', id),
+    bulkImport: (items) => ipcRenderer.invoke('inventory:bulkImport', items),
   },
   categories: {
     getAll: () => ipcRenderer.invoke('categories:getAll'),
@@ -23,6 +24,15 @@ contextBridge.exposeInMainWorld('api', {
   credit: {
     getAll: () => ipcRenderer.invoke('credit:getAll'),
     settlePayment: (data) => ipcRenderer.invoke('credit:settlePayment', data),
+  },
+  expenses: {
+    getAll: () => ipcRenderer.invoke('expenses:getAll'),
+    add: (data) => ipcRenderer.invoke('expenses:add', data),
+    delete: (id) => ipcRenderer.invoke('expenses:delete', id),
+  },
+  register: {
+    getToday: () => ipcRenderer.invoke('register:getToday'),
+    update: (data) => ipcRenderer.invoke('register:update', data),
   },
   analytics: {
     getData: () => ipcRenderer.invoke('analytics:getData'),

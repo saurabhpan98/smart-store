@@ -1,12 +1,14 @@
 // src/pages/Inventory.jsx
-import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, AlertTriangle, FolderPlus, X, Package, AlertCircle, Layers } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Edit2, Trash2, AlertTriangle, FolderPlus, X, Package, AlertCircle, Layers, FileSpreadsheet, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export default function Inventory() {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState('');
   const [notice, setNotice] = useState({ message: '', type: '' });
+  const fileInputRef = useRef(null);
   
   // Item Modal
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
@@ -15,6 +17,8 @@ export default function Inventory() {
     name: '',
     category_id: '',
     salts: [''],
+    batch_no: '',
+    expiry_date: '',
     sku_barcode: '',
     cost_price: 0,
     selling_price: 0,
@@ -51,29 +55,22 @@ export default function Inventory() {
     }
   };
 
-  // Helper to check if current selected category is Medicine
   const isMedicineCategory = (catId) => {
     const cat = categories.find((c) => c.id === parseInt(catId));
     return cat && cat.name.toLowerCase().includes('medicine');
   };
 
-  // Salt Array Helpers
-  const handleAddSalt = () => {
-    setFormData({ ...formData, salts: [...formData.salts, ''] });
-  };
-
+  const handleAddSalt = () => setFormData({ ...formData, salts: [...formData.salts, ''] });
   const handleSaltChange = (index, value) => {
     const updated = [...formData.salts];
     updated[index] = value;
     setFormData({ ...formData, salts: updated });
   };
-
   const handleRemoveSalt = (index) => {
     const updated = formData.salts.filter((_, i) => i !== index);
     setFormData({ ...formData, salts: updated.length ? updated : [''] });
   };
 
-  // Item Form Submit
   const handleItemSubmit = async (e) => {
     e.preventDefault();
     const isMed = isMedicineCategory(formData.category_id);
@@ -83,6 +80,8 @@ export default function Inventory() {
       ...formData,
       category_id: formData.category_id ? parseInt(formData.category_id) : null,
       salts: cleanedSalts,
+      batch_no: formData.batch_no || '',
+      expiry_date: formData.expiry_date || '',
       cost_price: parseFloat(formData.cost_price) || 0,
       selling_price: parseFloat(formData.selling_price) || 0,
       tax_rate: parseFloat(formData.tax_rate) || 0,
@@ -119,7 +118,9 @@ export default function Inventory() {
     setFormData({
       ...item,
       category_id: item.category_id || '',
-      salts: saltsList
+      salts: saltsList,
+      batch_no: item.batch_no || '',
+      expiry_date: item.expiry_date || ''
     });
     setIsItemModalOpen(true);
   };
@@ -130,6 +131,8 @@ export default function Inventory() {
       name: '',
       category_id: '',
       salts: [''],
+      batch_no: '',
+      expiry_date: '',
       sku_barcode: '',
       cost_price: 0,
       selling_price: 0,
@@ -138,6 +141,81 @@ export default function Inventory() {
       low_stock_threshold: 5,
       unit: 'pcs'
     });
+  };
+
+  // Feature 6: Bulk Import From Excel / CSV
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const rawData = XLSX.utils.sheet_to_json(wb.Sheets[wsname]);
+
+        if (rawData.length === 0) {
+          showNotice('Uploaded spreadsheet is empty.');
+          return;
+        }
+
+        const itemsToImport = rawData.map((row) => ({
+          name: row['Item Name'] || row['name'] || row['Product'],
+          sku_barcode: row['Barcode'] || row['sku_barcode'] || row['SKU'] ? String(row['Barcode'] || row['sku_barcode'] || row['SKU']) : null,
+          salts: row['Salts'] || row['salts'] || '',
+          batch_no: row['Batch'] || row['batch_no'] || '',
+          expiry_date: row['Expiry'] || row['expiry_date'] || '',
+          cost_price: parseFloat(row['Cost Price'] || row['cost_price'] || 0),
+          selling_price: parseFloat(row['Selling Price'] || row['selling_price'] || 0),
+          stock_qty: parseFloat(row['Stock'] || row['stock_qty'] || 0),
+          low_stock_threshold: parseFloat(row['Min Alert'] || row['low_stock_threshold'] || 5),
+          unit: row['Unit'] || row['unit'] || 'pcs',
+          tax_rate: parseFloat(row['GST'] || row['tax_rate'] || 0)
+        }));
+
+        const res = await window.api.inventory.bulkImport(itemsToImport);
+        if (res.success) {
+          showNotice(`Successfully imported ${res.count} products from Excel!`, 'success');
+          loadData();
+        } else {
+          showNotice('Bulk import failed: ' + res.error);
+        }
+      } catch (err) {
+        showNotice('Invalid Excel or CSV file format.');
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = null;
+  };
+
+  // Feature 6: Export Inventory to Excel
+  const handleExportToExcel = () => {
+    if (items.length === 0) {
+      showNotice('No items in stock to export.');
+      return;
+    }
+    const exportData = items.map((i, idx) => ({
+      '#': idx + 1,
+      'Item Name': i.name,
+      'Composition/Salts': i.salts || '',
+      'Category': i.category_name || 'General',
+      'Barcode': i.sku_barcode || '',
+      'Batch No': i.batch_no || '',
+      'Expiry Date': i.expiry_date || '',
+      'Cost Price (Rs)': i.cost_price,
+      'Selling Price (Rs)': i.selling_price,
+      'Stock Qty': i.stock_qty,
+      'Unit': i.unit,
+      'Tax Rate (%)': i.tax_rate
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'InventoryStock');
+    XLSX.writeFile(wb, `SmartStore_Inventory_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showNotice('Inventory exported to Excel!', 'success');
   };
 
   // Category Actions
@@ -179,19 +257,20 @@ export default function Inventory() {
     }
   };
 
-  // Filter with Salt Matching
   const filteredItems = items.filter((item) => {
     const q = search.toLowerCase();
-    const nameMatch = item.name.toLowerCase().includes(q);
-    const barcodeMatch = item.sku_barcode?.toLowerCase().includes(q);
-    const categoryMatch = item.category_name?.toLowerCase().includes(q);
-    const saltsMatch = item.salts?.toLowerCase().includes(q);
-    return nameMatch || barcodeMatch || categoryMatch || saltsMatch;
+    return (
+      item.name.toLowerCase().includes(q) ||
+      item.sku_barcode?.toLowerCase().includes(q) ||
+      item.category_name?.toLowerCase().includes(q) ||
+      item.salts?.toLowerCase().includes(q) ||
+      item.batch_no?.toLowerCase().includes(q)
+    );
   });
 
   return (
     <div className="p-6 bg-slate-50 h-full flex flex-col">
-      {/* Header */}
+      {/* Header Actions */}
       <div className="flex justify-between items-center mb-4">
         <div>
           <div className="flex items-center gap-3">
@@ -200,20 +279,42 @@ export default function Inventory() {
               Total: {items.length} Products
             </span>
           </div>
-          <p className="text-sm text-slate-500">Manage products, medicine salts, and synchronized categories.</p>
+          <p className="text-sm text-slate-500">Manage products, batches, expiries, and bulk spreadsheets.</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Hidden File Input for Excel Import */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            accept=".xlsx, .xls, .csv"
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current.click()}
+            className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 shadow-xs"
+            title="Import items via Excel or CSV"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Import Excel
+          </button>
+          <button
+            onClick={handleExportToExcel}
+            className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 shadow-xs"
+            title="Export stock data to Excel"
+          >
+            <Download className="h-4 w-4 text-indigo-600" /> Export Excel
+          </button>
           <button
             onClick={() => { setCatEditing(null); setCatForm({ name: '', description: '' }); setIsCatManagerOpen(true); }}
-            className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3.5 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 transition shadow-xs"
+            className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 shadow-xs"
           >
-            <Layers className="h-4 w-4 text-indigo-600" /> Manage Categories ({categories.length})
+            <Layers className="h-4 w-4 text-indigo-600" /> Categories ({categories.length})
           </button>
           <button
             onClick={() => { resetItemForm(); setIsItemModalOpen(true); }}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-xs"
+            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-xs"
           >
-            <Plus className="h-4 w-4" /> Add New Item
+            <Plus className="h-4 w-4" /> Add Item
           </button>
         </div>
       </div>
@@ -227,29 +328,29 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* Live Search by Product Name OR Salt */}
+      {/* Live Search */}
       <div className="mb-4">
         <input
           type="text"
-          placeholder="Search by Product Name, Medicine Salt Composition, Barcode, or Category..."
+          placeholder="Search by Product Name, Batch Number, Medicine Salt Composition, or Barcode..."
           className="w-full border border-slate-200 bg-white p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none shadow-xs"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
-      {/* Inventory Table */}
+      {/* Table */}
       <div className="flex-1 bg-white border border-slate-200 rounded-lg overflow-y-auto shadow-xs">
         <table className="w-full text-left text-sm text-slate-600">
           <thead className="bg-slate-100 text-xs uppercase text-slate-500 sticky top-0">
             <tr>
               <th className="p-3 text-center w-12">#</th>
-              <th className="p-3">Product Name & Composition</th>
-              <th className="p-3">Barcode / SKU</th>
+              <th className="p-3">Product Name & Salts</th>
+              <th className="p-3">Batch & Expiry</th>
               <th className="p-3">Category</th>
               <th className="p-3">Cost Price</th>
               <th className="p-3">Selling Price</th>
-              <th className="p-3">Stock Available</th>
+              <th className="p-3">Stock</th>
               <th className="p-3 text-right">Actions</th>
             </tr>
           </thead>
@@ -273,10 +374,15 @@ export default function Inventory() {
                       </span>
                     )}
                   </td>
-                  <td className="p-3 font-mono text-xs text-slate-500">{item.sku_barcode || '—'}</td>
+                  <td className="p-3 text-xs">
+                    <span className="font-mono text-slate-700 block">B: {item.batch_no || '—'}</span>
+                    <span className={`text-[11px] font-medium ${item.expiry_date && new Date(item.expiry_date) < new Date() ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                      Exp: {item.expiry_date || '—'}
+                    </span>
+                  </td>
                   <td className="p-3">
                     <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs">
-                      {item.category_name || 'General / None'}
+                      {item.category_name || 'General'}
                     </span>
                   </td>
                   <td className="p-3 text-slate-500">
@@ -308,7 +414,7 @@ export default function Inventory() {
         </table>
       </div>
 
-      {/* --- ADD / EDIT ITEM MODAL WITH MEDICINE SALTS --- */}
+      {/* --- ADD / EDIT ITEM MODAL --- */}
       {isItemModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex justify-center items-center z-50 p-4">
           <form onSubmit={handleItemSubmit} className="bg-white p-6 rounded-xl w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 border border-slate-100">
@@ -325,7 +431,7 @@ export default function Inventory() {
                 <input
                   required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="e.g., Cilnep-T 40 or Paracetamol 500"
+                  placeholder="e.g., Cilnep-T 40"
                   value={formData.name || ''}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
@@ -349,34 +455,54 @@ export default function Inventory() {
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Barcode / SKU</label>
                 <input
                   className="w-full border p-2 rounded-lg font-mono text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="Scan or enter code"
+                  placeholder="Scan or enter barcode"
                   value={formData.sku_barcode || ''}
                   onChange={(e) => setFormData({ ...formData, sku_barcode: e.target.value })}
                 />
               </div>
 
-              {/* Dynamic Medicine Salts Section */}
+              {/* Batch No & Expiry Date (Feature 1) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Batch Number</label>
+                <input
+                  type="text"
+                  placeholder="e.g., BTH-9021"
+                  className="w-full border p-2 rounded-lg font-mono text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={formData.batch_no || ''}
+                  onChange={(e) => setFormData({ ...formData, batch_no: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Expiry Date</label>
+                <input
+                  type="date"
+                  className="w-full border p-2 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={formData.expiry_date || ''}
+                  onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
+                />
+              </div>
+
+              {/* Dynamic Salts */}
               {isMedicineCategory(formData.category_id) && (
-                <div className="col-span-2 bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-100 space-y-2">
+                <div className="col-span-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 space-y-2">
                   <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-indigo-900">
-                      Medicine Salt Compositions:
-                    </label>
+                    <label className="text-xs font-bold text-indigo-900">Medicine Salt Compositions:</label>
                     <button
                       type="button"
                       onClick={handleAddSalt}
-                      className="flex items-center gap-1 text-xs bg-indigo-600 text-white px-2.5 py-1 rounded-md hover:bg-indigo-700 shadow-xs font-medium"
+                      className="flex items-center gap-1 text-xs bg-indigo-600 text-white px-2 py-1 rounded-md hover:bg-indigo-700 shadow-xs font-medium"
                     >
-                      <Plus className="h-3.5 w-3.5" /> Add Another Salt
+                      <Plus className="h-3 w-3" /> Add Salt
                     </button>
                   </div>
-                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                     {formData.salts.map((salt, idx) => (
                       <div key={idx} className="flex gap-2 items-center">
                         <input
                           type="text"
-                          className="flex-1 bg-white border border-slate-200 p-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                          placeholder={idx === 0 ? "e.g., Cilnidipine 10mg" : "e.g., Telmisartan 40mg"}
+                          className="flex-1 bg-white border border-slate-200 p-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder="e.g., Cilnidipine 10mg"
                           value={salt}
                           onChange={(e) => handleSaltChange(idx, e.target.value)}
                         />
@@ -384,9 +510,9 @@ export default function Inventory() {
                           <button
                             type="button"
                             onClick={() => handleRemoveSalt(idx)}
-                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded"
+                            className="p-1 text-rose-500 hover:bg-rose-50 rounded"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
@@ -432,11 +558,11 @@ export default function Inventory() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit of Measure *</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit *</label>
                 <input
                   required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="strip, tab, pcs, bottle, box"
+                  placeholder="pcs, strip, kg, bottle"
                   value={formData.unit || ''}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                 />
@@ -484,7 +610,7 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* --- CATEGORY MANAGER MODAL (View, Edit, Delete with Auto-Cascade) --- */}
+      {/* --- CATEGORY MANAGER MODAL --- */}
       {isCatManagerOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl w-[540px] shadow-2xl space-y-4 border border-slate-100 max-h-[85vh] flex flex-col">
@@ -497,13 +623,12 @@ export default function Inventory() {
               </button>
             </div>
 
-            {/* Form */}
             <form onSubmit={handleSaveCategory} className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
               <div className="flex gap-2">
                 <input
                   required
                   type="text"
-                  placeholder="Category Name (e.g. Medicine, Syrups, General)"
+                  placeholder="Category Name"
                   className="flex-1 border border-slate-300 p-2 rounded-lg text-xs outline-none bg-white focus:ring-2 focus:ring-indigo-500"
                   value={catForm.name}
                   onChange={(e) => setCatForm({ ...catForm, name: e.target.value })}
@@ -533,7 +658,6 @@ export default function Inventory() {
               />
             </form>
 
-            {/* Categories List */}
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100 border rounded-lg">
               {categories.map((cat) => (
                 <div key={cat.id} className="p-3 flex justify-between items-center hover:bg-slate-50">

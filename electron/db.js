@@ -37,20 +37,15 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // Default seeded categories if empty
-  const catCount = db.prepare('SELECT count(*) as count FROM categories').get();
-  if (catCount.count === 0) {
-    db.prepare(`INSERT INTO categories (name, description) VALUES ('Medicine', 'Pharmaceuticals & drugs')`).run();
-    db.prepare(`INSERT INTO categories (name, description) VALUES ('General', 'General store goods')`).run();
-  }
-
-  // 3. Items (with salts column)
+  // 3. Items (with Batch & Expiry Date)
   db.exec(`
     CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
       name TEXT NOT NULL,
       salts TEXT DEFAULT '',
+      batch_no TEXT DEFAULT '',
+      expiry_date TEXT DEFAULT '',
       sku_barcode TEXT UNIQUE,
       cost_price REAL DEFAULT 0,
       selling_price REAL NOT NULL,
@@ -62,12 +57,10 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // Migration: Ensure 'salts' column exists if db was created earlier
-  try {
-    db.exec(`ALTER TABLE items ADD COLUMN salts TEXT DEFAULT ''`);
-  } catch (e) {
-    // Column already exists
-  }
+  // Migrations for existing database instances
+  try { db.exec(`ALTER TABLE items ADD COLUMN salts TEXT DEFAULT ''`); } catch (e) {}
+  try { db.exec(`ALTER TABLE items ADD COLUMN batch_no TEXT DEFAULT ''`); } catch (e) {}
+  try { db.exec(`ALTER TABLE items ADD COLUMN expiry_date TEXT DEFAULT ''`); } catch (e) {}
 
   // 4. Invoices
   db.exec(`
@@ -97,6 +90,8 @@ function initDatabase(userDataPath) {
       invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
       item_id INTEGER REFERENCES items(id),
       item_name TEXT NOT NULL,
+      batch_no TEXT DEFAULT '',
+      expiry_date TEXT DEFAULT '',
       quantity REAL NOT NULL,
       unit_cost_price REAL NOT NULL,
       unit_selling_price REAL NOT NULL,
@@ -105,8 +100,10 @@ function initDatabase(userDataPath) {
       line_total REAL NOT NULL
     );
   `);
+  try { db.exec(`ALTER TABLE invoice_items ADD COLUMN batch_no TEXT DEFAULT ''`); } catch (e) {}
+  try { db.exec(`ALTER TABLE invoice_items ADD COLUMN expiry_date TEXT DEFAULT ''`); } catch (e) {}
 
-  // 6. Purchase Orders (with salts column)
+  // 6. Purchase Orders
   db.exec(`
     CREATE TABLE IF NOT EXISTS purchase_orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,6 +111,8 @@ function initDatabase(userDataPath) {
       category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
       item_name TEXT NOT NULL,
       salts TEXT DEFAULT '',
+      batch_no TEXT DEFAULT '',
+      expiry_date TEXT DEFAULT '',
       sku_barcode TEXT,
       cost_price REAL DEFAULT 0,
       selling_price REAL DEFAULT 0,
@@ -125,14 +124,36 @@ function initDatabase(userDataPath) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  try { db.exec(`ALTER TABLE purchase_orders ADD COLUMN salts TEXT DEFAULT ''`); } catch (e) {}
+  try { db.exec(`ALTER TABLE purchase_orders ADD COLUMN batch_no TEXT DEFAULT ''`); } catch (e) {}
+  try { db.exec(`ALTER TABLE purchase_orders ADD COLUMN expiry_date TEXT DEFAULT ''`); } catch (e) {}
 
-  try {
-    db.exec(`ALTER TABLE purchase_orders ADD COLUMN salts TEXT DEFAULT ''`);
-  } catch (e) {
-    // Column already exists
-  }
+  // 7. Store Expenses Table (Feature 5)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL,
+      amount REAL NOT NULL,
+      notes TEXT DEFAULT '',
+      expense_date DATE DEFAULT (DATE('now', 'localtime')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 
-  // 7. Store Settings
+  // 8. Daily Register / Day-End Shifts Table (Feature 4)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_registers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      register_date DATE UNIQUE DEFAULT (DATE('now', 'localtime')),
+      opening_cash REAL DEFAULT 0,
+      closing_cash REAL DEFAULT 0,
+      notes TEXT DEFAULT '',
+      status TEXT CHECK(status IN ('OPEN', 'CLOSED')) DEFAULT 'OPEN',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // 9. Store Settings (with UPI ID for Dynamic QR)
   db.exec(`
     CREATE TABLE IF NOT EXISTS store_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -141,15 +162,17 @@ function initDatabase(userDataPath) {
       phone TEXT DEFAULT '',
       address TEXT DEFAULT '',
       gstin TEXT DEFAULT '',
+      upi_id TEXT DEFAULT '',
       receipt_footer TEXT DEFAULT 'Thank you for shopping with us!'
     );
   `);
+  try { db.exec(`ALTER TABLE store_settings ADD COLUMN upi_id TEXT DEFAULT ''`); } catch (e) {}
 
   const settingsCount = db.prepare('SELECT count(*) as count FROM store_settings').get();
   if (settingsCount.count === 0) {
     db.prepare(`
-      INSERT INTO store_settings (id, shop_name, owner_name, phone, address, gstin, receipt_footer)
-      VALUES (1, 'Smart Store', 'Store Owner', '', '', '', 'Thank you for shopping with us!')
+      INSERT INTO store_settings (id, shop_name, owner_name, phone, address, gstin, upi_id, receipt_footer)
+      VALUES (1, 'Smart Store', 'Store Owner', '', '', '', '', 'Thank you for shopping with us!')
     `).run();
   }
 
