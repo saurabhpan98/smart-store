@@ -90,18 +90,18 @@ ipcMain.handle('inventory:saveItem', async (_, item) => {
 
     if (item.id) {
       const stmt = dbInstance.prepare(`
-        UPDATE items SET category_id=?, name=?, salts=?, batch_no=?, expiry_date=?, sku_barcode=?, cost_price=?, 
+        UPDATE items SET category_id=?, name=?, brand=?, salts=?, batch_no=?, expiry_date=?, sku_barcode=?, cost_price=?, 
         selling_price=?, tax_rate=?, stock_qty=?, low_stock_threshold=?, unit=?, updated_at=CURRENT_TIMESTAMP
         WHERE id=?
       `);
-      stmt.run(item.category_id || null, item.name, saltsStr, item.batch_no || '', item.expiry_date || '', item.sku_barcode || null, 
+      stmt.run(item.category_id || null, item.name, item.brand || '', saltsStr, item.batch_no || '', item.expiry_date || '', item.sku_barcode || null, 
                item.cost_price || 0, item.selling_price || 0, item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs', item.id);
     } else {
       const stmt = dbInstance.prepare(`
-        INSERT INTO items (category_id, name, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO items (category_id, name, brand, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      stmt.run(item.category_id || null, item.name, saltsStr, item.batch_no || '', item.expiry_date || '', item.sku_barcode || null, 
+      stmt.run(item.category_id || null, item.name, item.brand || '', saltsStr, item.batch_no || '', item.expiry_date || '', item.sku_barcode || null, 
                item.cost_price || 0, item.selling_price || 0, item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs');
     }
     return { success: true };
@@ -217,14 +217,14 @@ ipcMain.handle('pos:checkout', async (_, invoiceData) => {
     const invoiceId = invResult.lastInsertRowid;
 
     const itemStmt = dbInstance.prepare(`
-      INSERT INTO invoice_items (invoice_id, item_id, item_name, batch_no, expiry_date, quantity, unit_cost_price, unit_selling_price, discount_amount, tax_amount, line_total)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO invoice_items (invoice_id, item_id, item_name, brand, batch_no, expiry_date, quantity, unit_cost_price, unit_selling_price, discount_amount, tax_amount, line_total)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const stockStmt = dbInstance.prepare(`UPDATE items SET stock_qty = stock_qty - ? WHERE id = ?`);
 
     for (const item of data.items) {
       itemStmt.run(
-        invoiceId, item.id, item.name, item.batch_no || '', item.expiry_date || '', item.qty,
+        invoiceId, item.id, item.name, item.brand || '', item.batch_no || '', item.expiry_date || '', item.qty,
         item.cost_price || 0, item.selling_price, item.discount || 0, item.tax || 0, item.line_total
       );
       stockStmt.run(item.qty, item.id);
@@ -445,22 +445,22 @@ ipcMain.handle('orders:save', async (_, order) => {
   if (order.id) {
     const stmt = dbInstance.prepare(`
       UPDATE purchase_orders 
-      SET category_id=?, item_name=?, salts=?, batch_no=?, expiry_date=?, sku_barcode=?, cost_price=?, selling_price=?, tax_rate=?, suggested_qty=?, low_stock_threshold=?, unit=?
+      SET category_id=?, item_name=?, brand=?, salts=?, batch_no=?, expiry_date=?, sku_barcode=?, cost_price=?, selling_price=?, tax_rate=?, suggested_qty=?, low_stock_threshold=?, unit=?
       WHERE id=?
     `);
     stmt.run(
-      order.category_id || null, order.item_name, saltsStr, order.batch_no || '', order.expiry_date || '', order.sku_barcode || null,
+      order.category_id || null, order.item_name, order.brand || '', saltsStr, order.batch_no || '', order.expiry_date || '', order.sku_barcode || null,
       order.cost_price || 0, order.selling_price || 0, order.tax_rate || 0,
       order.suggested_qty || 1, order.low_stock_threshold || 5, order.unit || 'pcs',
       order.id
     );
   } else {
     const stmt = dbInstance.prepare(`
-      INSERT INTO purchase_orders (category_id, item_name, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, suggested_qty, low_stock_threshold, unit, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+      INSERT INTO purchase_orders (category_id, item_name, brand, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, suggested_qty, low_stock_threshold, unit, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
     `);
     stmt.run(
-      order.category_id || null, order.item_name, saltsStr, order.batch_no || '', order.expiry_date || '', order.sku_barcode || null,
+      order.category_id || null, order.item_name, order.brand || '', saltsStr, order.batch_no || '', order.expiry_date || '', order.sku_barcode || null,
       order.cost_price || 0, order.selling_price || 0, order.tax_rate || 0,
       order.suggested_qty || 1, order.low_stock_threshold || 5, order.unit || 'pcs'
     );
@@ -480,12 +480,12 @@ ipcMain.handle('orders:moveToInventory', async (_, orderId) => {
 
     const transferTx = dbInstance.transaction(() => {
       const insertStmt = dbInstance.prepare(`
-        INSERT INTO items (category_id, name, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO items (category_id, name, brand, salts, batch_no, expiry_date, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       insertStmt.run(
-        order.category_id || null, order.item_name, order.salts || '', order.batch_no || '', order.expiry_date || '',
+        order.category_id || null, order.item_name, order.brand || '', order.salts || '', order.batch_no || '', order.expiry_date || '',
         order.sku_barcode || null, order.cost_price || 0, order.selling_price || 0,
         order.tax_rate || 0, order.suggested_qty || 0, order.low_stock_threshold || 5, order.unit || 'pcs'
       );

@@ -2,10 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Explicitly allow inputs to maintain pointer focus and text selection */
-input, textarea, select {
+/* Ensure all form controls never lose interaction capability */
+input, textarea, select, button {
   user-select: text !important;
   -webkit-user-select: text !important;
+  pointer-events: auto !important;
+}
+
+body, #root {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 * {

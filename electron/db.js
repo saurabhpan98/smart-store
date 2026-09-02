@@ -37,12 +37,13 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // 3. Items (with Batch & Expiry Date)
+  // 3. Items (with Brand, Salts, Batch & Expiry)
   db.exec(`
     CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
       name TEXT NOT NULL,
+      brand TEXT DEFAULT '',
       salts TEXT DEFAULT '',
       batch_no TEXT DEFAULT '',
       expiry_date TEXT DEFAULT '',
@@ -57,7 +58,7 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // Migrations for existing database instances
+  try { db.exec(`ALTER TABLE items ADD COLUMN brand TEXT DEFAULT ''`); } catch (e) {}
   try { db.exec(`ALTER TABLE items ADD COLUMN salts TEXT DEFAULT ''`); } catch (e) {}
   try { db.exec(`ALTER TABLE items ADD COLUMN batch_no TEXT DEFAULT ''`); } catch (e) {}
   try { db.exec(`ALTER TABLE items ADD COLUMN expiry_date TEXT DEFAULT ''`); } catch (e) {}
@@ -90,6 +91,7 @@ function initDatabase(userDataPath) {
       invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
       item_id INTEGER REFERENCES items(id),
       item_name TEXT NOT NULL,
+      brand TEXT DEFAULT '',
       batch_no TEXT DEFAULT '',
       expiry_date TEXT DEFAULT '',
       quantity REAL NOT NULL,
@@ -100,6 +102,7 @@ function initDatabase(userDataPath) {
       line_total REAL NOT NULL
     );
   `);
+  try { db.exec(`ALTER TABLE invoice_items ADD COLUMN brand TEXT DEFAULT ''`); } catch (e) {}
   try { db.exec(`ALTER TABLE invoice_items ADD COLUMN batch_no TEXT DEFAULT ''`); } catch (e) {}
   try { db.exec(`ALTER TABLE invoice_items ADD COLUMN expiry_date TEXT DEFAULT ''`); } catch (e) {}
 
@@ -110,6 +113,7 @@ function initDatabase(userDataPath) {
       item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
       category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
       item_name TEXT NOT NULL,
+      brand TEXT DEFAULT '',
       salts TEXT DEFAULT '',
       batch_no TEXT DEFAULT '',
       expiry_date TEXT DEFAULT '',
@@ -124,11 +128,12 @@ function initDatabase(userDataPath) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  try { db.exec(`ALTER TABLE purchase_orders ADD COLUMN brand TEXT DEFAULT ''`); } catch (e) {}
   try { db.exec(`ALTER TABLE purchase_orders ADD COLUMN salts TEXT DEFAULT ''`); } catch (e) {}
   try { db.exec(`ALTER TABLE purchase_orders ADD COLUMN batch_no TEXT DEFAULT ''`); } catch (e) {}
   try { db.exec(`ALTER TABLE purchase_orders ADD COLUMN expiry_date TEXT DEFAULT ''`); } catch (e) {}
 
-  // 7. Store Expenses Table (Feature 5)
+  // 7. Store Expenses Table
   db.exec(`
     CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,7 +145,7 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // 8. Daily Register / Day-End Shifts Table (Feature 4)
+  // 8. Daily Register Table
   db.exec(`
     CREATE TABLE IF NOT EXISTS daily_registers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,7 +158,7 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // 9. Store Settings (with UPI ID for Dynamic QR)
+  // 9. Store Settings
   db.exec(`
     CREATE TABLE IF NOT EXISTS store_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),

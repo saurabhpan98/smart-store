@@ -1,11 +1,11 @@
 // src/pages/DayEndRegister.jsx
 import React, { useState, useEffect } from 'react';
-import { Landmark, CheckCircle2, AlertCircle, Save, Clock, ArrowRight } from 'lucide-react';
+import { Landmark, CheckCircle2, Save } from 'lucide-react';
 
 export default function DayEndRegister() {
   const [data, setData] = useState(null);
-  const [openingCash, setOpeningCash] = useState('');
-  const [closingCash, setClosingCash] = useState('');
+  const [openingCash, setOpeningCash] = useState('0');
+  const [closingCash, setClosingCash] = useState('0');
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState('OPEN');
   const [savedNotice, setSavedNotice] = useState(false);
@@ -17,10 +17,10 @@ export default function DayEndRegister() {
   const loadRegister = async () => {
     try {
       const res = await window.api.register.getToday();
-      if (res) {
+      if (res && res.register) {
         setData(res);
-        setOpeningCash(res.register.opening_cash || 0);
-        setClosingCash(res.register.closing_cash || 0);
+        setOpeningCash(String(res.register.opening_cash ?? '0'));
+        setClosingCash(String(res.register.closing_cash ?? '0'));
         setStatus(res.register.status || 'OPEN');
         setNotes(res.register.notes || '');
       }
@@ -35,7 +35,7 @@ export default function DayEndRegister() {
       opening_cash: parseFloat(openingCash) || 0,
       closing_cash: parseFloat(closingCash) || 0,
       status,
-      notes
+      notes: notes || ''
     });
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 3000);
@@ -45,7 +45,8 @@ export default function DayEndRegister() {
   if (!data) return <div className="p-6 text-sm text-slate-500">Loading Cash Register...</div>;
 
   const { cashSales, upiSales, expenses, expectedCash } = data;
-  const cashDifference = (parseFloat(closingCash) || 0) - expectedCash;
+  const numClosing = parseFloat(closingCash) || 0;
+  const cashDifference = numClosing - expectedCash;
 
   return (
     <div className="p-6 bg-slate-50 h-full overflow-y-auto space-y-6">
@@ -67,11 +68,11 @@ export default function DayEndRegister() {
         </div>
       )}
 
-      {/* Today's Cash Flow Breakdown */}
+      {/* Cash Flow Summary Cards */}
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border shadow-xs">
           <span className="text-xs uppercase font-semibold text-slate-500">Opening Drawer Cash</span>
-          <h3 className="text-xl font-bold text-slate-900 mt-1">₹{parseFloat(openingCash || 0).toFixed(2)}</h3>
+          <h3 className="text-xl font-bold text-slate-900 mt-1">₹{(parseFloat(openingCash) || 0).toFixed(2)}</h3>
         </div>
         <div className="bg-white p-4 rounded-xl border shadow-xs">
           <span className="text-xs uppercase font-semibold text-slate-500">Today Cash Sales</span>
@@ -87,7 +88,7 @@ export default function DayEndRegister() {
         </div>
       </div>
 
-      {/* Shift Form */}
+      {/* Form Card */}
       <div className="max-w-2xl bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-4">
         <h3 className="font-bold text-base text-slate-800 flex items-center gap-2 border-b pb-3">
           <Landmark className="h-5 w-5 text-indigo-600" /> End of Day Register Reconcile
@@ -101,7 +102,7 @@ export default function DayEndRegister() {
                 type="number"
                 step="any"
                 className="w-full border p-2 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
-                value={openingCash}
+                value={openingCash ?? ''}
                 onChange={(e) => setOpeningCash(e.target.value)}
               />
             </div>
@@ -111,13 +112,12 @@ export default function DayEndRegister() {
                 type="number"
                 step="any"
                 className="w-full border p-2 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-900"
-                value={closingCash}
+                value={closingCash ?? ''}
                 onChange={(e) => setClosingCash(e.target.value)}
               />
             </div>
           </div>
 
-          {/* Cash Difference Indicator */}
           {closingCash !== '' && (
             <div className={`p-3 rounded-lg border text-xs font-semibold flex justify-between items-center ${
               Math.abs(cashDifference) < 1 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
@@ -133,9 +133,9 @@ export default function DayEndRegister() {
             <label className="block text-xs font-semibold text-slate-600 mb-1">Shift Closing Notes</label>
             <textarea
               rows="2"
-              placeholder="e.g. Handover to night staff, extra 500 kept for change..."
+              placeholder="e.g. Handover to night staff, extra cash kept for change..."
               className="w-full border p-2 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-xs"
-              value={notes}
+              value={notes ?? ''}
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>

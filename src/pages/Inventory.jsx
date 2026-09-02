@@ -1,6 +1,6 @@
 // src/pages/Inventory.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, AlertTriangle, FolderPlus, X, Package, AlertCircle, Layers, FileSpreadsheet, Download } from 'lucide-react';
+import { Plus, Edit2, Trash2, AlertTriangle, X, Package, AlertCircle, Layers, FileSpreadsheet, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export default function Inventory() {
@@ -15,6 +15,7 @@ export default function Inventory() {
   const [formData, setFormData] = useState({
     id: null,
     name: '',
+    brand: '',
     category_id: '',
     salts: [''],
     batch_no: '',
@@ -79,6 +80,7 @@ export default function Inventory() {
     const payload = {
       ...formData,
       category_id: formData.category_id ? parseInt(formData.category_id) : null,
+      brand: formData.brand?.trim() || '',
       salts: cleanedSalts,
       batch_no: formData.batch_no || '',
       expiry_date: formData.expiry_date || '',
@@ -117,6 +119,7 @@ export default function Inventory() {
     }
     setFormData({
       ...item,
+      brand: item.brand || '',
       category_id: item.category_id || '',
       salts: saltsList,
       batch_no: item.batch_no || '',
@@ -129,6 +132,7 @@ export default function Inventory() {
     setFormData({
       id: null,
       name: '',
+      brand: '',
       category_id: '',
       salts: [''],
       batch_no: '',
@@ -143,7 +147,7 @@ export default function Inventory() {
     });
   };
 
-  // Feature 6: Bulk Import From Excel / CSV
+  // Bulk Import
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -163,6 +167,7 @@ export default function Inventory() {
 
         const itemsToImport = rawData.map((row) => ({
           name: row['Item Name'] || row['name'] || row['Product'],
+          brand: row['Brand'] || row['brand'] || row['Company'] || '',
           sku_barcode: row['Barcode'] || row['sku_barcode'] || row['SKU'] ? String(row['Barcode'] || row['sku_barcode'] || row['SKU']) : null,
           salts: row['Salts'] || row['salts'] || '',
           batch_no: row['Batch'] || row['batch_no'] || '',
@@ -190,7 +195,6 @@ export default function Inventory() {
     e.target.value = null;
   };
 
-  // Feature 6: Export Inventory to Excel
   const handleExportToExcel = () => {
     if (items.length === 0) {
       showNotice('No items in stock to export.');
@@ -199,6 +203,7 @@ export default function Inventory() {
     const exportData = items.map((i, idx) => ({
       '#': idx + 1,
       'Item Name': i.name,
+      'Brand / Company': i.brand || '',
       'Composition/Salts': i.salts || '',
       'Category': i.category_name || 'General',
       'Barcode': i.sku_barcode || '',
@@ -218,7 +223,6 @@ export default function Inventory() {
     showNotice('Inventory exported to Excel!', 'success');
   };
 
-  // Category Actions
   const handleSaveCategory = async (e) => {
     e.preventDefault();
     if (!catForm.name.trim()) return;
@@ -246,7 +250,7 @@ export default function Inventory() {
   };
 
   const handleDeleteCategory = async (cat) => {
-    if (window.confirm(`Delete category "${cat.name}"? Products under this category will automatically be unassigned.`)) {
+    if (window.confirm(`Delete category "${cat.name}"?`)) {
       const res = await window.api.categories.delete(cat.id);
       if (res.success) {
         showNotice('Category deleted.', 'success');
@@ -261,6 +265,7 @@ export default function Inventory() {
     const q = search.toLowerCase();
     return (
       item.name.toLowerCase().includes(q) ||
+      item.brand?.toLowerCase().includes(q) ||
       item.sku_barcode?.toLowerCase().includes(q) ||
       item.category_name?.toLowerCase().includes(q) ||
       item.salts?.toLowerCase().includes(q) ||
@@ -270,7 +275,7 @@ export default function Inventory() {
 
   return (
     <div className="p-6 bg-slate-50 h-full flex flex-col">
-      {/* Header Actions */}
+      {/* Header */}
       <div className="flex justify-between items-center mb-4">
         <div>
           <div className="flex items-center gap-3">
@@ -279,10 +284,9 @@ export default function Inventory() {
               Total: {items.length} Products
             </span>
           </div>
-          <p className="text-sm text-slate-500">Manage products, batches, expiries, and bulk spreadsheets.</p>
+          <p className="text-sm text-slate-500">Manage brands, batches, expiry alerts, and stock data.</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Hidden File Input for Excel Import */}
           <input
             type="file"
             ref={fileInputRef}
@@ -293,14 +297,12 @@ export default function Inventory() {
           <button
             onClick={() => fileInputRef.current.click()}
             className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 shadow-xs"
-            title="Import items via Excel or CSV"
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Import Excel
           </button>
           <button
             onClick={handleExportToExcel}
             className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 shadow-xs"
-            title="Export stock data to Excel"
           >
             <Download className="h-4 w-4 text-indigo-600" /> Export Excel
           </button>
@@ -332,7 +334,7 @@ export default function Inventory() {
       <div className="mb-4">
         <input
           type="text"
-          placeholder="Search by Product Name, Batch Number, Medicine Salt Composition, or Barcode..."
+          placeholder="Search by Product Name, Brand / Company, Salt Composition, or Batch No..."
           className="w-full border border-slate-200 bg-white p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none shadow-xs"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -345,7 +347,7 @@ export default function Inventory() {
           <thead className="bg-slate-100 text-xs uppercase text-slate-500 sticky top-0">
             <tr>
               <th className="p-3 text-center w-12">#</th>
-              <th className="p-3">Product Name & Salts</th>
+              <th className="p-3">Product Name & Brand</th>
               <th className="p-3">Batch & Expiry</th>
               <th className="p-3">Category</th>
               <th className="p-3">Cost Price</th>
@@ -367,7 +369,14 @@ export default function Inventory() {
                 <tr key={item.id} className="hover:bg-slate-50 transition">
                   <td className="p-3 text-center text-xs font-semibold text-slate-400">{idx + 1}</td>
                   <td className="p-3">
-                    <span className="font-semibold text-slate-900 block">{item.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-900">{item.name}</span>
+                      {item.brand && (
+                        <span className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-medium border border-slate-200">
+                          {item.brand}
+                        </span>
+                      )}
+                    </div>
                     {item.salts && (
                       <span className="text-xs text-slate-500 font-normal lowercase italic block">
                         ({item.salts})
@@ -414,7 +423,7 @@ export default function Inventory() {
         </table>
       </div>
 
-      {/* --- ADD / EDIT ITEM MODAL --- */}
+      {/* --- ADD / EDIT MODAL --- */}
       {isItemModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex justify-center items-center z-50 p-4">
           <form onSubmit={handleItemSubmit} className="bg-white p-6 rounded-xl w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 border border-slate-100">
@@ -426,7 +435,7 @@ export default function Inventory() {
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="col-span-2">
+              <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Item Name *</label>
                 <input
                   required
@@ -434,6 +443,18 @@ export default function Inventory() {
                   placeholder="e.g., Cilnep-T 40"
                   value={formData.name || ''}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                />
+              </div>
+
+              {/* Feature 1: Brand / Company Name Field */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Brand / Company Name</label>
+                <input
+                  type="text"
+                  className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="e.g., Cipla, Sun Pharma, Nestle"
+                  value={formData.brand || ''}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                 />
               </div>
 
@@ -461,7 +482,6 @@ export default function Inventory() {
                 />
               </div>
 
-              {/* Batch No & Expiry Date (Feature 1) */}
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Batch Number</label>
                 <input
@@ -483,7 +503,6 @@ export default function Inventory() {
                 />
               </div>
 
-              {/* Dynamic Salts */}
               {isMedicineCategory(formData.category_id) && (
                 <div className="col-span-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 space-y-2">
                   <div className="flex justify-between items-center">
@@ -610,7 +629,7 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* --- CATEGORY MANAGER MODAL --- */}
+      {/* Categories Manager Modal */}
       {isCatManagerOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl w-[540px] shadow-2xl space-y-4 border border-slate-100 max-h-[85vh] flex flex-col">

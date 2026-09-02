@@ -15,6 +15,7 @@ export default function ReorderList() {
   const [formData, setFormData] = useState({
     id: null,
     item_name: '',
+    brand: '',
     category_id: '',
     salts: [''],
     sku_barcode: '',
@@ -88,6 +89,7 @@ export default function ReorderList() {
     if (window.api.orders?.save) {
       const res = await window.api.orders.save({
         ...formData,
+        brand: formData.brand?.trim() || '',
         category_id: formData.category_id ? parseInt(formData.category_id) : null,
         salts: cleanedSalts,
         suggested_qty: parseFloat(formData.suggested_qty) || 1,
@@ -113,6 +115,7 @@ export default function ReorderList() {
     setFormData({
       id: null,
       item_name: '',
+      brand: '',
       category_id: '',
       salts: [''],
       sku_barcode: '',
@@ -134,6 +137,7 @@ export default function ReorderList() {
     setFormData({
       id: order.id,
       item_name: order.item_name,
+      brand: order.brand || '',
       category_id: order.category_id || '',
       salts: saltsList,
       sku_barcode: order.sku_barcode || '',
@@ -182,7 +186,9 @@ export default function ReorderList() {
     let index = 1;
 
     lowStockItems.forEach((item) => {
-      const displayName = item.salts ? `${item.name} (${item.salts})` : item.name;
+      let displayName = item.name;
+      if (item.brand) displayName += ` [${item.brand}]`;
+      if (item.salts) displayName += ` (${item.salts})`;
       rows.push([
         index++,
         displayName,
@@ -195,7 +201,9 @@ export default function ReorderList() {
     });
 
     customOrders.forEach((order) => {
-      const displayName = order.salts ? `${order.item_name} (${order.salts})` : order.item_name;
+      let displayName = order.item_name;
+      if (order.brand) displayName += ` [${order.brand}]`;
+      if (order.salts) displayName += ` (${order.salts})`;
       rows.push([
         index++,
         displayName,
@@ -209,7 +217,7 @@ export default function ReorderList() {
 
     autoTable(doc, {
       startY: 34,
-      head: [['#', 'Item Name & Composition', 'Category', 'Source', 'Required / Current', 'Estimated Cost Rate', 'Order Qty']],
+      head: [['#', 'Item Name & Brand', 'Category', 'Source', 'Required / Current', 'Estimated Cost Rate', 'Order Qty']],
       body: rows
     });
 
@@ -217,11 +225,11 @@ export default function ReorderList() {
     showNotice('Vendor Reorder PDF downloaded!', 'success');
   };
 
-  // Filter matching both Name and Medicine Salt Composition
-  const matchesSearch = (name, salts, barcode, category) => {
+  const matchesSearch = (name, brand, salts, barcode, category) => {
     const q = search.toLowerCase();
     return (
       (name && name.toLowerCase().includes(q)) ||
+      (brand && brand.toLowerCase().includes(q)) ||
       (salts && salts.toLowerCase().includes(q)) ||
       (barcode && barcode.toLowerCase().includes(q)) ||
       (category && category.toLowerCase().includes(q))
@@ -229,11 +237,11 @@ export default function ReorderList() {
   };
 
   const filteredLowStock = lowStockItems.filter((i) =>
-    matchesSearch(i.name, i.salts, i.sku_barcode, i.category_name)
+    matchesSearch(i.name, i.brand, i.salts, i.sku_barcode, i.category_name)
   );
 
   const filteredCustomOrders = customOrders.filter((o) =>
-    matchesSearch(o.item_name, o.salts, o.sku_barcode, o.category_name)
+    matchesSearch(o.item_name, o.brand, o.salts, o.sku_barcode, o.category_name)
   );
 
   const totalToOrderItems = lowStockItems.length + customOrders.length;
@@ -281,14 +289,14 @@ export default function ReorderList() {
         </div>
       )}
 
-      {/* Live Search by Product Name OR Salt */}
+      {/* Live Search by Name, Brand, or Salt */}
       <div className="relative">
         <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
         <input
           type="text"
-          placeholder="Search by Product Name, Medicine Salt Composition, Barcode, or Category..."
+          placeholder="Search by Product Name, Brand / Company, Medicine Salt Composition, or Barcode..."
           className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white shadow-xs"
-          value={search}
+          value={search ?? ''}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
@@ -299,7 +307,7 @@ export default function ReorderList() {
           <thead className="bg-slate-50 text-xs uppercase text-slate-500 sticky top-0 border-b">
             <tr>
               <th className="p-3 text-center w-12">#</th>
-              <th className="p-3">Product Name & Composition</th>
+              <th className="p-3">Product Name & Brand</th>
               <th className="p-3">Category</th>
               <th className="p-3">Type</th>
               <th className="p-3">Estimated Cost Price</th>
@@ -322,12 +330,17 @@ export default function ReorderList() {
                   <tr key={`auto-${item.id}`} className="hover:bg-slate-50">
                     <td className="p-3 text-center text-xs font-semibold text-slate-400">{idx + 1}</td>
                     <td className="p-3">
-                      <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                      <div className="flex items-center gap-2 font-semibold text-slate-900">
                         <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
                         <span>{item.name}</span>
+                        {item.brand && (
+                          <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
+                            {item.brand}
+                          </span>
+                        )}
                       </div>
                       {item.salts && (
-                        <span className="text-[11px] text-slate-500 font-normal lowercase italic block ml-5">
+                        <span className="text-[11px] text-slate-500 font-normal lowercase italic block ml-6">
                           ({item.salts})
                         </span>
                       )}
@@ -351,7 +364,14 @@ export default function ReorderList() {
                   <tr key={`custom-${order.id}`} className="hover:bg-slate-50">
                     <td className="p-3 text-center text-xs font-semibold text-slate-400">{filteredLowStock.length + idx + 1}</td>
                     <td className="p-3">
-                      <span className="font-semibold text-slate-900 block">{order.item_name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-900">{order.item_name}</span>
+                        {order.brand && (
+                          <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
+                            {order.brand}
+                          </span>
+                        )}
+                      </div>
                       {order.salts && (
                         <span className="text-[11px] text-slate-500 font-normal lowercase italic block">
                           ({order.salts})
@@ -418,14 +438,25 @@ export default function ReorderList() {
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="col-span-2">
+              <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Item Name *</label>
                 <input
                   required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="e.g., Cilnep-T 40 or Basmati Rice 5kg"
-                  value={formData.item_name || ''}
+                  placeholder="e.g., Cilnep-T 40"
+                  value={formData.item_name ?? ''}
                   onChange={(e) => setFormData({ ...formData, item_name: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Brand / Company Name</label>
+                <input
+                  type="text"
+                  className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="e.g., Cipla, Sun Pharma"
+                  value={formData.brand ?? ''}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                 />
               </div>
 
@@ -433,7 +464,7 @@ export default function ReorderList() {
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Category</label>
                 <select
                   className="w-full border p-2 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.category_id || ''}
+                  value={formData.category_id ?? ''}
                   onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                 >
                   <option value="">General / None</option>
@@ -448,12 +479,12 @@ export default function ReorderList() {
                 <input
                   className="w-full border p-2 rounded-lg font-mono text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="Scan or enter code"
-                  value={formData.sku_barcode || ''}
+                  value={formData.sku_barcode ?? ''}
                   onChange={(e) => setFormData({ ...formData, sku_barcode: e.target.value })}
                 />
               </div>
 
-              {/* Dynamic Medicine Salts Section */}
+              {/* Dynamic Salts */}
               {isMedicineCategory(formData.category_id) && (
                 <div className="col-span-2 bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-100 space-y-2">
                   <div className="flex justify-between items-center">
@@ -465,7 +496,7 @@ export default function ReorderList() {
                       onClick={handleAddSalt}
                       className="flex items-center gap-1 text-xs bg-indigo-600 text-white px-2.5 py-1 rounded-md hover:bg-indigo-700 shadow-xs font-medium"
                     >
-                      <Plus className="h-3.5 w-3.5" /> Add Another Salt
+                      <Plus className="h-3.5 w-3.5" /> Add Salt
                     </button>
                   </div>
                   <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
@@ -475,7 +506,7 @@ export default function ReorderList() {
                           type="text"
                           className="flex-1 bg-white border border-slate-200 p-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
                           placeholder={idx === 0 ? "e.g., Cilnidipine 10mg" : "e.g., Telmisartan 40mg"}
-                          value={salt}
+                          value={salt ?? ''}
                           onChange={(e) => handleSaltChange(idx, e.target.value)}
                         />
                         {formData.salts.length > 1 && (
@@ -536,7 +567,7 @@ export default function ReorderList() {
                   required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="strip, tab, bottle, pcs, kg"
-                  value={formData.unit || ''}
+                  value={formData.unit ?? ''}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                 />
               </div>

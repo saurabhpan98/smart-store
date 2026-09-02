@@ -13,7 +13,7 @@ export async function generateInvoicePDF(invoice, storeInfo = {}) {
 
   const doc = new jsPDF({
     unit: 'mm',
-    format: [80, 280]
+    format: [80, 290]
   });
 
   doc.setFontSize(13);
@@ -61,9 +61,10 @@ export async function generateInvoicePDF(invoice, storeInfo = {}) {
   doc.setFont('helvetica', 'normal');
   currentY += 3.5;
 
-  // Items Table (with Batch No)
+  // Items Table (with Brand & Batch Details)
   const tableRows = invoice.items.map((item, idx) => {
     let nameText = `${idx + 1}. ${item.name}`;
+    if (item.brand) nameText += ` [${item.brand}]`;
     if (item.batch_no) nameText += `\nB:${item.batch_no} Exp:${item.expiry_date || 'N/A'}`;
     return [
       nameText,
@@ -76,7 +77,7 @@ export async function generateInvoicePDF(invoice, storeInfo = {}) {
 
   autoTable(doc, {
     startY: currentY + 1,
-    head: [['Item & Batch', 'Qty', 'Rate', 'Disc', 'Total']],
+    head: [['Item / Brand', 'Qty', 'Rate', 'Disc', 'Total']],
     body: tableRows,
     theme: 'plain',
     styles: { fontSize: 6.8, cellPadding: 1 },
@@ -123,7 +124,7 @@ export async function generateInvoicePDF(invoice, storeInfo = {}) {
     finalY += 8;
   }
 
-  // Feature 2: Dynamic UPI Scan & Pay QR Code
+  // Dynamic UPI Scan & Pay QR Code
   if (upiId && invoice.grand_total > 0) {
     try {
       const payableAmount = invoice.is_credit ? (invoice.due_amount || invoice.grand_total) : invoice.grand_total;
@@ -132,17 +133,18 @@ export async function generateInvoicePDF(invoice, storeInfo = {}) {
 
       doc.setFontSize(7);
       doc.setFont('helvetica', 'bold');
-      doc.text('Scan to Pay with Any UPI App:', 40, finalY + 23, { align: 'center' });
-      doc.addImage(qrDataUrl, 'PNG', 27.5, finalY + 25, 25, 25);
-      finalY += 31;
+      doc.text('Scan to Pay via Any UPI App:', 40, finalY + 22, { align: 'center' });
+      doc.addImage(qrDataUrl, 'PNG', 27.5, finalY + 24, 25, 25);
+      finalY += 30;
     } catch (err) {
-      console.error('QR Generation failed', err);
+      console.error('QR Generation error:', err);
     }
   }
 
+  // Centered Receipt Footer Note with wrap bounds
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text(footerNote, 40, finalY + 23, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.text(footerNote, 40, finalY + 24, { align: 'center', maxWidth: 72 });
 
   doc.save(`${invoice.invoice_number}.pdf`);
 }
