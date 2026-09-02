@@ -64,6 +64,7 @@ inventory-app/
 │   │   └── StatCard.jsx          # Analytics metric card
 │   ├── pages/
 │   │   ├── Analytics.jsx         # Sales dashboard & Recharts visualization
+│   │   ├── CustomerKhata.jsx     # Borrowed (Udhaar) customers section
 │   │   ├── Inventory.jsx         # Stock management & Add Category modal
 │   │   ├── Login.jsx             # Admin authentication portal
 │   │   ├── POS.jsx               # Table list billing, barcode, Cart, PDF, WhatsApp & Done

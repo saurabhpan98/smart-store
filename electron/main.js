@@ -206,17 +206,48 @@ ipcMain.handle('credit:settlePayment', async (_, { invoiceId, paymentAmount }) =
 });
 
 // Analytics
+// electron/main.js
 ipcMain.handle('analytics:getData', async () => {
-  const summary = dbInstance.prepare(`
+  // 1. Invoices & Sales Metrics (Excluding GST from Net Profit)
+  const salesSummary = dbInstance.prepare(`
     SELECT 
-      COALESCE(SUM(grand_total), 0) as total_revenue,
+      COALESCE(SUM(grand_total), 0) as gross_revenue,
+      COALESCE(SUM(grand_total - tax_total), 0) as net_sales_revenue,
+      COALESCE(SUM(tax_total), 0) as total_tax_collected,
       COALESCE(SUM(paid_amount), 0) as total_collected,
       COALESCE(SUM(due_amount), 0) as total_udhaar_pending,
-      COALESCE(SUM(grand_total - (SELECT SUM(unit_cost_price * quantity) FROM invoice_items WHERE invoice_items.invoice_id = invoices.id)), 0) as total_profit,
+      COALESCE(
+        SUM(
+          (SELECT SUM(unit_cost_price * quantity) 
+           FROM invoice_items 
+           WHERE invoice_items.invoice_id = invoices.id)
+        ), 
+        0
+      ) as sold_goods_cost,
+      COALESCE(
+        SUM(
+          (grand_total - tax_total) - (
+            SELECT SUM(unit_cost_price * quantity) 
+            FROM invoice_items 
+            WHERE invoice_items.invoice_id = invoices.id
+          )
+        ), 
+        0
+      ) as total_profit,
       (SELECT COUNT(*) FROM invoices) as total_orders
     FROM invoices
   `).get();
 
+  // 2. Current Inventory Valuation (Total Wholesaler Cost Paid)
+  const inventorySummary = dbInstance.prepare(`
+    SELECT 
+      COALESCE(SUM(cost_price * stock_qty), 0) as total_inventory_cost,
+      COALESCE(SUM(selling_price * stock_qty), 0) as total_inventory_retail_value,
+      COALESCE(SUM(stock_qty), 0) as total_stock_units
+    FROM items
+  `).get();
+
+  // 3. Top 5 Best Selling Items
   const topSelling = dbInstance.prepare(`
     SELECT item_name, SUM(quantity) as units_sold, SUM(line_total) as revenue 
     FROM invoice_items 
@@ -224,13 +255,22 @@ ipcMain.handle('analytics:getData', async () => {
     ORDER BY units_sold DESC LIMIT 5
   `).all();
 
+  // 4. Low Stock Alerts
   const lowStockItems = dbInstance.prepare(`
-    SELECT items.*, categories.name as category_name FROM items 
+    SELECT items.*, categories.name as category_name 
+    FROM items 
     LEFT JOIN categories ON items.category_id = categories.id
     WHERE stock_qty <= low_stock_threshold
   `).all();
 
-  return { summary, topSelling, lowStockItems };
+  return {
+    summary: {
+      ...salesSummary,
+      ...inventorySummary
+    },
+    topSelling,
+    lowStockItems
+  };
 });
 
 // Database Backup
