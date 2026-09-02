@@ -24,7 +24,7 @@ jobs:
       - name: Install Dependencies & Rebuild SQLite
         run: |
           npm install
-          npx electron-rebuild -f -w better-sqlite3
+          npx @electron/rebuild -f -w better-sqlite3
 
       - name: Build React UI
         run: npm run build:react
