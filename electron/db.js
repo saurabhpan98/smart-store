@@ -37,12 +37,20 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // 3. Items
+  // Default seeded categories if empty
+  const catCount = db.prepare('SELECT count(*) as count FROM categories').get();
+  if (catCount.count === 0) {
+    db.prepare(`INSERT INTO categories (name, description) VALUES ('Medicine', 'Pharmaceuticals & drugs')`).run();
+    db.prepare(`INSERT INTO categories (name, description) VALUES ('General', 'General store goods')`).run();
+  }
+
+  // 3. Items (with salts column)
   db.exec(`
     CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
       name TEXT NOT NULL,
+      salts TEXT DEFAULT '',
       sku_barcode TEXT UNIQUE,
       cost_price REAL DEFAULT 0,
       selling_price REAL NOT NULL,
@@ -54,7 +62,14 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // 4. Invoices (With Udhaar Ledger & GST toggle fields)
+  // Migration: Ensure 'salts' column exists if db was created earlier
+  try {
+    db.exec(`ALTER TABLE items ADD COLUMN salts TEXT DEFAULT ''`);
+  } catch (e) {
+    // Column already exists
+  }
+
+  // 4. Invoices
   db.exec(`
     CREATE TABLE IF NOT EXISTS invoices (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,13 +106,14 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // 6. Purchase Reorder List
+  // 6. Purchase Orders (with salts column)
   db.exec(`
     CREATE TABLE IF NOT EXISTS purchase_orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
       category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
       item_name TEXT NOT NULL,
+      salts TEXT DEFAULT '',
       sku_barcode TEXT,
       cost_price REAL DEFAULT 0,
       selling_price REAL DEFAULT 0,
@@ -110,7 +126,13 @@ function initDatabase(userDataPath) {
     );
   `);
 
-  // 7. Store Settings (GSTIN support)
+  try {
+    db.exec(`ALTER TABLE purchase_orders ADD COLUMN salts TEXT DEFAULT ''`);
+  } catch (e) {
+    // Column already exists
+  }
+
+  // 7. Store Settings
   db.exec(`
     CREATE TABLE IF NOT EXISTS store_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),

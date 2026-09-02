@@ -241,12 +241,16 @@ export default function POS() {
     }
   };
 
-  const filteredItems = items.filter(
-    (i) =>
-      i.name.toLowerCase().includes(search.toLowerCase()) ||
-      i.sku_barcode?.toLowerCase().includes(search.toLowerCase()) ||
-      i.category_name?.toLowerCase().includes(search.toLowerCase())
-  );
+  // 1. Updated filter to support salt search:
+	const filteredItems = items.filter((i) => {
+	  const q = search.toLowerCase();
+	  return (
+		i.name.toLowerCase().includes(q) ||
+		i.sku_barcode?.toLowerCase().includes(q) ||
+		i.category_name?.toLowerCase().includes(q) ||
+		i.salts?.toLowerCase().includes(q)
+	  );
+	});
 
   return (
     <div className="flex h-screen w-full gap-4 p-4 bg-slate-100 overflow-hidden box-border">
@@ -298,49 +302,56 @@ export default function POS() {
 
                   return (
                     <tr
-                      key={item.id}
-                      onClick={() => !isOutOfStock && addToCart(item)}
-                      className={`hover:bg-indigo-50/50 cursor-pointer transition ${
-                        isOutOfStock ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''
-                      }`}
-                    >
-                      <td className="py-3 px-3 text-center text-xs font-semibold text-slate-400">{idx + 1}</td>
-                      <td className="py-3 px-4 font-medium text-slate-900">{item.name}</td>
-                      <td className="py-3 px-4">
-                        <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
-                          {item.category_name || 'General'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-mono text-xs text-slate-500">{item.sku_barcode || '—'}</td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded font-medium ${
-                            isOutOfStock
-                              ? 'bg-rose-100 text-rose-700'
-                              : isLowStock
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-emerald-100 text-emerald-800'
-                          }`}
-                        >
-                          {item.stock_qty} {item.unit || 'pcs'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right font-bold text-slate-900">
-                        ₹{item.selling_price} <span className="text-xs font-normal text-slate-500">/ {item.unit || 'pcs'}</span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <button
-                          disabled={isOutOfStock}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            addToCart(item);
-                          }}
-                          className="px-2.5 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded text-xs font-semibold transition disabled:opacity-40"
-                        >
-                          <Plus className="h-3.5 w-3.5 inline mr-0.5" /> Add
-                        </button>
-                      </td>
-                    </tr>
+					  key={item.id}
+					  onClick={() => !isOutOfStock && addToCart(item)}
+					  className={`hover:bg-indigo-50/50 cursor-pointer transition ${
+						isOutOfStock ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''
+					  }`}
+					>
+					  <td className="py-3 px-3 text-center text-xs font-semibold text-slate-400">{idx + 1}</td>
+					  <td className="py-3 px-4">
+						<span className="font-medium text-slate-900 block">{item.name}</span>
+						{item.salts && (
+						  <span className="text-[11px] text-slate-500 font-normal lowercase italic block">
+							({item.salts})
+						  </span>
+						)}
+					  </td>
+					  <td className="py-3 px-4">
+						<span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+						  {item.category_name || 'General'}
+						</span>
+					  </td>
+					  <td className="py-3 px-4 font-mono text-xs text-slate-500">{item.sku_barcode || '—'}</td>
+					  <td className="py-3 px-4">
+						<span
+						  className={`text-xs px-2 py-0.5 rounded font-medium ${
+							isOutOfStock
+							  ? 'bg-rose-100 text-rose-700'
+							  : isLowStock
+							  ? 'bg-amber-100 text-amber-800'
+							  : 'bg-emerald-100 text-emerald-800'
+						  }`}
+						>
+						  {item.stock_qty} {item.unit || 'pcs'}
+						</span>
+					  </td>
+					  <td className="py-3 px-4 text-right font-bold text-slate-900">
+						₹{item.selling_price} <span className="text-xs font-normal text-slate-500">/ {item.unit || 'pcs'}</span>
+					  </td>
+					  <td className="py-3 px-4 text-center">
+						<button
+						  disabled={isOutOfStock}
+						  onClick={(e) => {
+							e.stopPropagation();
+							addToCart(item);
+						  }}
+						  className="px-2.5 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded text-xs font-semibold transition disabled:opacity-40"
+						>
+						  <Plus className="h-3.5 w-3.5 inline mr-0.5" /> Add
+						</button>
+					  </td>
+					</tr>
                   );
                 })
               )}

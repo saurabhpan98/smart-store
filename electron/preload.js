@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('api', {
   categories: {
     getAll: () => ipcRenderer.invoke('categories:getAll'),
     create: (cat) => ipcRenderer.invoke('categories:create', cat),
+    update: (cat) => ipcRenderer.invoke('categories:update', cat),
+    delete: (id) => ipcRenderer.invoke('categories:delete', id),
   },
   pos: {
     checkout: (data) => ipcRenderer.invoke('pos:checkout', data),

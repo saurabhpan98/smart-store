@@ -1,17 +1,20 @@
 // src/pages/Inventory.jsx
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, AlertTriangle, FolderPlus, X, Package, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, AlertTriangle, FolderPlus, X, Package, AlertCircle, Layers } from 'lucide-react';
 
 export default function Inventory() {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [search, setSearch] = useState('');
   const [notice, setNotice] = useState({ message: '', type: '' });
   
+  // Item Modal
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     id: null,
     name: '',
     category_id: '',
+    salts: [''],
     sku_barcode: '',
     cost_price: 0,
     selling_price: 0,
@@ -21,8 +24,10 @@ export default function Inventory() {
     unit: 'pcs'
   });
 
-  const [isCatModalOpen, setIsCatModalOpen] = useState(false);
-  const [catFormData, setCatFormData] = useState({ name: '', description: '' });
+  // Category Manager Modal
+  const [isCatManagerOpen, setIsCatManagerOpen] = useState(false);
+  const [catEditing, setCatEditing] = useState(null);
+  const [catForm, setCatForm] = useState({ name: '', description: '' });
 
   useEffect(() => {
     loadData();
@@ -46,11 +51,38 @@ export default function Inventory() {
     }
   };
 
+  // Helper to check if current selected category is Medicine
+  const isMedicineCategory = (catId) => {
+    const cat = categories.find((c) => c.id === parseInt(catId));
+    return cat && cat.name.toLowerCase().includes('medicine');
+  };
+
+  // Salt Array Helpers
+  const handleAddSalt = () => {
+    setFormData({ ...formData, salts: [...formData.salts, ''] });
+  };
+
+  const handleSaltChange = (index, value) => {
+    const updated = [...formData.salts];
+    updated[index] = value;
+    setFormData({ ...formData, salts: updated });
+  };
+
+  const handleRemoveSalt = (index) => {
+    const updated = formData.salts.filter((_, i) => i !== index);
+    setFormData({ ...formData, salts: updated.length ? updated : [''] });
+  };
+
+  // Item Form Submit
   const handleItemSubmit = async (e) => {
     e.preventDefault();
+    const isMed = isMedicineCategory(formData.category_id);
+    const cleanedSalts = isMed ? formData.salts.filter((s) => s.trim() !== '') : [];
+
     const payload = {
       ...formData,
       category_id: formData.category_id ? parseInt(formData.category_id) : null,
+      salts: cleanedSalts,
       cost_price: parseFloat(formData.cost_price) || 0,
       selling_price: parseFloat(formData.selling_price) || 0,
       tax_rate: parseFloat(formData.tax_rate) || 0,
@@ -63,7 +95,7 @@ export default function Inventory() {
     if (res.success) {
       setIsItemModalOpen(false);
       resetItemForm();
-      showNotice(formData.id ? 'Product updated successfully!' : 'Product added to stock!', 'success');
+      showNotice(formData.id ? 'Item updated successfully!' : 'Item added to stock!', 'success');
       loadData();
     } else {
       showNotice(res.error || 'Failed to save product.');
@@ -79,7 +111,16 @@ export default function Inventory() {
   };
 
   const handleEditItem = (item) => {
-    setFormData({ ...item, category_id: item.category_id || '' });
+    let saltsList = [''];
+    if (item.salts) {
+      saltsList = item.salts.split('+').map((s) => s.trim()).filter(Boolean);
+      if (!saltsList.length) saltsList = [''];
+    }
+    setFormData({
+      ...item,
+      category_id: item.category_id || '',
+      salts: saltsList
+    });
     setIsItemModalOpen(true);
   };
 
@@ -88,6 +129,7 @@ export default function Inventory() {
       id: null,
       name: '',
       category_id: '',
+      salts: [''],
       sku_barcode: '',
       cost_price: 0,
       selling_price: 0,
@@ -98,25 +140,59 @@ export default function Inventory() {
     });
   };
 
-  const handleCategorySubmit = async (e) => {
+  // Category Actions
+  const handleSaveCategory = async (e) => {
     e.preventDefault();
-    if (!catFormData.name.trim()) return;
+    if (!catForm.name.trim()) return;
 
-    const res = await window.api.categories.create(catFormData);
-    if (res.success) {
-      setIsCatModalOpen(false);
-      setCatFormData({ name: '', description: '' });
-      showNotice('Category added successfully!', 'success');
-      await loadData();
+    if (catEditing) {
+      const res = await window.api.categories.update({ id: catEditing.id, ...catForm });
+      if (res.success) {
+        showNotice('Category updated successfully!', 'success');
+        setCatEditing(null);
+        setCatForm({ name: '', description: '' });
+        loadData();
+      } else {
+        showNotice(res.error || 'Failed to update category.');
+      }
     } else {
-      showNotice(res.error || 'Category creation failed.');
+      const res = await window.api.categories.create(catForm);
+      if (res.success) {
+        showNotice('Category created successfully!', 'success');
+        setCatForm({ name: '', description: '' });
+        loadData();
+      } else {
+        showNotice(res.error || 'Failed to create category.');
+      }
     }
   };
 
+  const handleDeleteCategory = async (cat) => {
+    if (window.confirm(`Delete category "${cat.name}"? Products under this category will automatically be unassigned.`)) {
+      const res = await window.api.categories.delete(cat.id);
+      if (res.success) {
+        showNotice('Category deleted.', 'success');
+        loadData();
+      } else {
+        showNotice(res.error || 'Failed to delete category.');
+      }
+    }
+  };
+
+  // Filter with Salt Matching
+  const filteredItems = items.filter((item) => {
+    const q = search.toLowerCase();
+    const nameMatch = item.name.toLowerCase().includes(q);
+    const barcodeMatch = item.sku_barcode?.toLowerCase().includes(q);
+    const categoryMatch = item.category_name?.toLowerCase().includes(q);
+    const saltsMatch = item.salts?.toLowerCase().includes(q);
+    return nameMatch || barcodeMatch || categoryMatch || saltsMatch;
+  });
+
   return (
     <div className="p-6 bg-slate-50 h-full flex flex-col">
-      {/* Header Actions */}
-      <div className="flex justify-between items-center mb-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-slate-800">Inventory Stock</h1>
@@ -124,14 +200,14 @@ export default function Inventory() {
               Total: {items.length} Products
             </span>
           </div>
-          <p className="text-sm text-slate-500">Manage stock, categories, unit prices and low-stock limits.</p>
+          <p className="text-sm text-slate-500">Manage products, medicine salts, and synchronized categories.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { setCatFormData({ name: '', description: '' }); setIsCatModalOpen(true); }}
+            onClick={() => { setCatEditing(null); setCatForm({ name: '', description: '' }); setIsCatManagerOpen(true); }}
             className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3.5 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 transition shadow-xs"
           >
-            <FolderPlus className="h-4 w-4 text-indigo-600" /> Add Category
+            <Layers className="h-4 w-4 text-indigo-600" /> Manage Categories ({categories.length})
           </button>
           <button
             onClick={() => { resetItemForm(); setIsItemModalOpen(true); }}
@@ -143,7 +219,7 @@ export default function Inventory() {
       </div>
 
       {notice.message && (
-        <div className={`mb-4 p-3 rounded-lg text-xs font-medium flex items-center gap-2 ${
+        <div className={`mb-3 p-3 rounded-lg text-xs font-medium flex items-center gap-2 ${
           notice.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
         }`}>
           <AlertCircle className="h-4 w-4 shrink-0" />
@@ -151,13 +227,24 @@ export default function Inventory() {
         </div>
       )}
 
+      {/* Live Search by Product Name OR Salt */}
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Search by Product Name, Medicine Salt Composition, Barcode, or Category..."
+          className="w-full border border-slate-200 bg-white p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none shadow-xs"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       {/* Inventory Table */}
       <div className="flex-1 bg-white border border-slate-200 rounded-lg overflow-y-auto shadow-xs">
         <table className="w-full text-left text-sm text-slate-600">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500 sticky top-0">
+          <thead className="bg-slate-100 text-xs uppercase text-slate-500 sticky top-0">
             <tr>
               <th className="p-3 text-center w-12">#</th>
-              <th className="p-3">Item Name</th>
+              <th className="p-3">Product Name & Composition</th>
               <th className="p-3">Barcode / SKU</th>
               <th className="p-3">Category</th>
               <th className="p-3">Cost Price</th>
@@ -167,22 +254,29 @@ export default function Inventory() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {items.length === 0 ? (
+            {filteredItems.length === 0 ? (
               <tr>
                 <td colSpan="8" className="p-8 text-center text-slate-400">
                   <Package className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-                  No products in inventory yet. Click <b>"Add New Item"</b> to begin.
+                  No products found.
                 </td>
               </tr>
             ) : (
-              items.map((item, idx) => (
+              filteredItems.map((item, idx) => (
                 <tr key={item.id} className="hover:bg-slate-50 transition">
                   <td className="p-3 text-center text-xs font-semibold text-slate-400">{idx + 1}</td>
-                  <td className="p-3 font-medium text-slate-900">{item.name}</td>
+                  <td className="p-3">
+                    <span className="font-semibold text-slate-900 block">{item.name}</span>
+                    {item.salts && (
+                      <span className="text-xs text-slate-500 font-normal lowercase italic block">
+                        ({item.salts})
+                      </span>
+                    )}
+                  </td>
                   <td className="p-3 font-mono text-xs text-slate-500">{item.sku_barcode || '—'}</td>
                   <td className="p-3">
                     <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs">
-                      {item.category_name || 'General'}
+                      {item.category_name || 'General / None'}
                     </span>
                   </td>
                   <td className="p-3 text-slate-500">
@@ -214,10 +308,10 @@ export default function Inventory() {
         </table>
       </div>
 
-      {/* Item Modal */}
+      {/* --- ADD / EDIT ITEM MODAL WITH MEDICINE SALTS --- */}
       {isItemModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex justify-center items-center z-50 p-4">
-          <form onSubmit={handleItemSubmit} className="bg-white p-6 rounded-xl w-[520px] shadow-2xl space-y-4 border border-slate-100">
+          <form onSubmit={handleItemSubmit} className="bg-white p-6 rounded-xl w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 border border-slate-100">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-bold text-lg text-slate-800">{formData.id ? 'Edit Inventory Item' : 'Add New Inventory Item'}</h3>
               <button type="button" onClick={() => setIsItemModalOpen(false)} className="text-slate-400 hover:text-slate-600">
@@ -231,23 +325,14 @@ export default function Inventory() {
                 <input
                   required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="e.g., Basmati Rice 5kg"
+                  placeholder="e.g., Cilnep-T 40 or Paracetamol 500"
                   value={formData.name || ''}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-xs font-semibold text-slate-600">Category</label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCatModalOpen(true)}
-                    className="text-[11px] text-indigo-600 hover:underline flex items-center gap-0.5"
-                  >
-                    <Plus className="h-3 w-3 inline" /> New
-                  </button>
-                </div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Category</label>
                 <select
                   className="w-full border p-2 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={formData.category_id || ''}
@@ -269,6 +354,46 @@ export default function Inventory() {
                   onChange={(e) => setFormData({ ...formData, sku_barcode: e.target.value })}
                 />
               </div>
+
+              {/* Dynamic Medicine Salts Section */}
+              {isMedicineCategory(formData.category_id) && (
+                <div className="col-span-2 bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-100 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-indigo-900">
+                      Medicine Salt Compositions:
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleAddSalt}
+                      className="flex items-center gap-1 text-xs bg-indigo-600 text-white px-2.5 py-1 rounded-md hover:bg-indigo-700 shadow-xs font-medium"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add Another Salt
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {formData.salts.map((salt, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          className="flex-1 bg-white border border-slate-200 p-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder={idx === 0 ? "e.g., Cilnidipine 10mg" : "e.g., Telmisartan 40mg"}
+                          value={salt}
+                          onChange={(e) => handleSaltChange(idx, e.target.value)}
+                        />
+                        {formData.salts.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSalt(idx)}
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Cost Price (₹)</label>
@@ -311,7 +436,7 @@ export default function Inventory() {
                 <input
                   required
                   className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="e.g., pcs, kg, packet, litre, pouch"
+                  placeholder="strip, tab, pcs, bottle, box"
                   value={formData.unit || ''}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                 />
@@ -359,60 +484,83 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* Category Modal */}
-      {isCatModalOpen && (
+      {/* --- CATEGORY MANAGER MODAL (View, Edit, Delete with Auto-Cascade) --- */}
+      {isCatManagerOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-4">
-          <form onSubmit={handleCategorySubmit} className="bg-white p-6 rounded-xl w-96 shadow-2xl space-y-4 border border-slate-100">
+          <div className="bg-white p-6 rounded-xl w-[540px] shadow-2xl space-y-4 border border-slate-100 max-h-[85vh] flex flex-col">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
-                <FolderPlus className="h-5 w-5 text-indigo-600" /> Add New Category
+                <Layers className="h-5 w-5 text-indigo-600" /> Categories Manager
               </h3>
-              <button type="button" onClick={() => setIsCatModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button type="button" onClick={() => setIsCatManagerOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-sm">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Category Name *</label>
+            {/* Form */}
+            <form onSubmit={handleSaveCategory} className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+              <div className="flex gap-2">
                 <input
                   required
                   type="text"
-                  placeholder="e.g., Grocery, Cosmetics, Dairy"
-                  className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={catFormData.name || ''}
-                  onChange={(e) => setCatFormData({ ...catFormData, name: e.target.value })}
+                  placeholder="Category Name (e.g. Medicine, Syrups, General)"
+                  className="flex-1 border border-slate-300 p-2 rounded-lg text-xs outline-none bg-white focus:ring-2 focus:ring-indigo-500"
+                  value={catForm.name}
+                  onChange={(e) => setCatForm({ ...catForm, name: e.target.value })}
                 />
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 shadow-xs"
+                >
+                  {catEditing ? 'Update' : 'Add Category'}
+                </button>
+                {catEditing && (
+                  <button
+                    type="button"
+                    onClick={() => { setCatEditing(null); setCatForm({ name: '', description: '' }); }}
+                    className="px-2.5 py-1.5 border bg-white text-slate-600 text-xs rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                )}
               </div>
+              <input
+                type="text"
+                placeholder="Optional short description..."
+                className="w-full border border-slate-300 p-1.5 rounded-lg text-xs outline-none bg-white"
+                value={catForm.description}
+                onChange={(e) => setCatForm({ ...catForm, description: e.target.value })}
+              />
+            </form>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Description (Optional)</label>
-                <textarea
-                  rows="2"
-                  placeholder="Short description..."
-                  className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={catFormData.description || ''}
-                  onChange={(e) => setCatFormData({ ...catFormData, description: e.target.value })}
-                />
-              </div>
+            {/* Categories List */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 border rounded-lg">
+              {categories.map((cat) => (
+                <div key={cat.id} className="p-3 flex justify-between items-center hover:bg-slate-50">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800">{cat.name}</h4>
+                    <p className="text-[11px] text-slate-400">{cat.description || 'No description'} • {cat.item_count || 0} active items</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setCatEditing(cat); setCatForm({ name: cat.name, description: cat.description || '' }); }}
+                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
+                      title="Edit Category Name"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCategory(cat)}
+                      className="p-1 text-rose-600 hover:bg-rose-50 rounded"
+                      title="Delete Category"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                type="button"
-                onClick={() => setIsCatModalOpen(false)}
-                className="px-4 py-2 border rounded-lg text-sm text-slate-600 hover:bg-slate-100"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700"
-              >
-                Save Category
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       )}
     </div>

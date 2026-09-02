@@ -78,28 +78,31 @@ ipcMain.handle('inventory:getAll', async () => {
   `).all();
 });
 
+// Inventory saveItem (Handles salts)
 ipcMain.handle('inventory:saveItem', async (_, item) => {
   try {
     if (item.sku_barcode && item.sku_barcode.trim()) {
       const existing = dbInstance.prepare('SELECT id FROM items WHERE sku_barcode = ? AND id != ?')
         .get(item.sku_barcode.trim(), item.id || 0);
-      if (existing) return { success: false, error: `Barcode '${item.sku_barcode}' already exists for another product.` };
+      if (existing) return { success: false, error: `Barcode '${item.sku_barcode}' already exists.` };
     }
+
+    const saltsStr = Array.isArray(item.salts) ? item.salts.filter(Boolean).join(' + ') : (item.salts || '');
 
     if (item.id) {
       const stmt = dbInstance.prepare(`
-        UPDATE items SET category_id=?, name=?, sku_barcode=?, cost_price=?, 
+        UPDATE items SET category_id=?, name=?, salts=?, sku_barcode=?, cost_price=?, 
         selling_price=?, tax_rate=?, stock_qty=?, low_stock_threshold=?, unit=?, updated_at=CURRENT_TIMESTAMP
         WHERE id=?
       `);
-      stmt.run(item.category_id || null, item.name, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
+      stmt.run(item.category_id || null, item.name, saltsStr, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
                item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs', item.id);
     } else {
       const stmt = dbInstance.prepare(`
-        INSERT INTO items (category_id, name, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO items (category_id, name, salts, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      stmt.run(item.category_id || null, item.name, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
+      stmt.run(item.category_id || null, item.name, saltsStr, item.sku_barcode || null, item.cost_price || 0, item.selling_price || 0, 
                item.tax_rate || 0, item.stock_qty || 0, item.low_stock_threshold || 5, item.unit || 'pcs');
     }
     return { success: true };
@@ -115,15 +118,44 @@ ipcMain.handle('inventory:deleteItem', async (_, id) => {
 
 // Categories
 ipcMain.handle('categories:getAll', async () => {
-  return dbInstance.prepare('SELECT * FROM categories ORDER BY name ASC').all();
+  return dbInstance.prepare(`
+    SELECT categories.*, 
+    (SELECT COUNT(*) FROM items WHERE items.category_id = categories.id) as item_count 
+    FROM categories 
+    ORDER BY categories.name ASC
+  `).all();
 });
 
 ipcMain.handle('categories:create', async (_, { name, description }) => {
   try {
-    dbInstance.prepare('INSERT INTO categories (name, description) VALUES (?, ?)').run(name, description);
+    dbInstance.prepare('INSERT INTO categories (name, description) VALUES (?, ?)').run(name.trim(), description || '');
     return { success: true };
   } catch (err) {
     return { success: false, error: 'Category already exists' };
+  }
+});
+
+ipcMain.handle('categories:update', async (_, { id, name, description }) => {
+  try {
+    dbInstance.prepare('UPDATE categories SET name = ?, description = ? WHERE id = ?').run(name.trim(), description || '', id);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: 'Category name already exists' };
+  }
+});
+
+ipcMain.handle('categories:delete', async (_, id) => {
+  try {
+    const deleteTx = dbInstance.transaction(() => {
+      // Clear references in items and purchase orders
+      dbInstance.prepare('UPDATE items SET category_id = NULL WHERE category_id = ?').run(id);
+      dbInstance.prepare('UPDATE purchase_orders SET category_id = NULL WHERE category_id = ?').run(id);
+      dbInstance.prepare('DELETE FROM categories WHERE id = ?').run(id);
+    });
+    deleteTx();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });
 
@@ -297,26 +329,28 @@ ipcMain.handle('orders:getAll', async () => {
   `).all();
 });
 
+// Orders save & moveToInventory (Handles salts)
 ipcMain.handle('orders:save', async (_, order) => {
+  const saltsStr = Array.isArray(order.salts) ? order.salts.filter(Boolean).join(' + ') : (order.salts || '');
   if (order.id) {
     const stmt = dbInstance.prepare(`
       UPDATE purchase_orders 
-      SET category_id=?, item_name=?, sku_barcode=?, cost_price=?, selling_price=?, tax_rate=?, suggested_qty=?, low_stock_threshold=?, unit=?
+      SET category_id=?, item_name=?, salts=?, sku_barcode=?, cost_price=?, selling_price=?, tax_rate=?, suggested_qty=?, low_stock_threshold=?, unit=?
       WHERE id=?
     `);
     stmt.run(
-      order.category_id || null, order.item_name, order.sku_barcode || null,
+      order.category_id || null, order.item_name, saltsStr, order.sku_barcode || null,
       order.cost_price || 0, order.selling_price || 0, order.tax_rate || 0,
       order.suggested_qty || 1, order.low_stock_threshold || 5, order.unit || 'pcs',
       order.id
     );
   } else {
     const stmt = dbInstance.prepare(`
-      INSERT INTO purchase_orders (category_id, item_name, sku_barcode, cost_price, selling_price, tax_rate, suggested_qty, low_stock_threshold, unit, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+      INSERT INTO purchase_orders (category_id, item_name, salts, sku_barcode, cost_price, selling_price, tax_rate, suggested_qty, low_stock_threshold, unit, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
     `);
     stmt.run(
-      order.category_id || null, order.item_name, order.sku_barcode || null,
+      order.category_id || null, order.item_name, saltsStr, order.sku_barcode || null,
       order.cost_price || 0, order.selling_price || 0, order.tax_rate || 0,
       order.suggested_qty || 1, order.low_stock_threshold || 5, order.unit || 'pcs'
     );
@@ -332,22 +366,20 @@ ipcMain.handle('orders:moveToInventory', async (_, orderId) => {
     if (order.sku_barcode && order.sku_barcode.trim()) {
       const conflict = dbInstance.prepare('SELECT id, name FROM items WHERE sku_barcode = ?').get(order.sku_barcode.trim());
       if (conflict) {
-        return { 
-          success: false, 
-          error: `Barcode '${order.sku_barcode}' is already assigned to item '${conflict.name}'.` 
-        };
+        return { success: false, error: `Barcode '${order.sku_barcode}' already exists for item '${conflict.name}'.` };
       }
     }
 
     const transferTx = dbInstance.transaction(() => {
       const insertStmt = dbInstance.prepare(`
-        INSERT INTO items (category_id, name, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO items (category_id, name, salts, sku_barcode, cost_price, selling_price, tax_rate, stock_qty, low_stock_threshold, unit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       insertStmt.run(
         order.category_id || null,
         order.item_name,
+        order.salts || '',
         order.sku_barcode || null,
         order.cost_price || 0,
         order.selling_price || 0,
