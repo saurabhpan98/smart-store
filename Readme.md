@@ -7,23 +7,51 @@ A robust, standalone, and 100% offline Windows Desktop Point of Sale (POS) and I
 ## Key Features
 
 - **Point of Sale (POS) Billing:**
-  - Fast barcode scanning and live product search.
+  - Fast barcode scanning and live search by product name, medicine salt composition, or brand name.
   - Automatic inventory deduction upon checkout.
-  - Line-item discounts, flat bill discounts, and tax/GST calculation.
-  - Instant 80mm thermal receipt PDF generation.
-  - 1-Click WhatsApp invoice link generation (`wa.me`).
-- **Inventory & Category Management:**
-  - Create, view, update, and delete items with categories, SKU/barcodes, cost prices, selling prices, and units.
-  - Configurable low-stock alert thresholds.
+  - Granular line-item discounts, overall bill discounts (flat ₹ or % off), and GST/Non-GST compliance toggle.
+  - Dynamic **UPI Scan-to-Pay QR Code** generated directly on receipts and screen for instant payment verification.
+  - Full payment vs. **Udhaar (Credit)** split with custom due balance tracking.
+  - 80mm thermal receipt PDF generation with item units, batches, brand tags, and centered footer notes.
+  - 1-Click WhatsApp invoice link generation (`wa.me`) opened directly in the default system browser.
+
+- **Inventory, Brand & Medicine Management:**
+  - Product tracking with Brand/Company names, categories, SKU/barcodes, cost prices, selling rates, and units (e.g., ₹/kg, ₹/strip, ₹/pcs).
+  - **Dynamic Medicine Salts:** Multi-salt composition support with dynamic inputs for pharmaceuticals.
+  - **Batch & Expiry Management:** Batch number tracking with automated 45-day near-expiry and expired stock alerts.
+  - **Bulk Excel Import/Export:** 1-Click batch import from `.xlsx`/`.csv` spreadsheets and full catalog export to Excel.
+
+- **Customer Khata (Udhaar Ledger):**
+  - Dedicated customer credit tracking ledger.
+  - Real-time view of customer dues, partial payment settlement, and 1-click WhatsApp payment reminders.
+
+- **Daily Cash Register & Shift Closing:**
+  - Counter cash reconciliation: Opening drawer cash, counted closing cash, and expected drawer total based on cash sales and expenses.
+  - Discrepancy (shortage/excess) detection and shift closing notes.
+
+- **Store Expense Tracker:**
+  - Track shop rent, staff wages, electricity, packaging, and tea/refreshments.
+  - Direct integration into reports for accurate pocket profit computation.
+
+- **Category Management with Cascading Sync:**
+  - Centralized category CRUD modal.
+  - Cascading auto-unassign/sync across active inventory and reorder lists on category removal or modification.
+
 - **Smart Reorder & Purchase List:**
-  - Automated "To-Order" tracking for items reaching low stock levels.
+  - Automated "To-Order" tracking for low-stock items.
+  - Custom procurement item entries with full specifications (Brand, Salts, Batch, Prices).
+  - 1-Click transfer from received list directly into active inventory.
   - Export vendor replenishment purchase order sheets directly to PDF.
-- **Sales Analytics & Reports:**
-  - Real-time KPI cards: Total Revenue, Net Profit, Total Orders.
+
+- **Business Analytics & Financials:**
+  - Real-time KPI cards: Total Revenue, Gross Profit, Total Expenses, and Real Net Pocket Profit (`Gross Profit - Expenses`).
+  - True financial separation: GST collected is strictly segregated from store profits.
+  - Total Wholesaler Purchase Investment valuation vs. current retail stock valuation.
   - Top 5 best-selling products chart using Recharts.
-  - Low-stock warning widget.
+  - Low-stock and near-expiry warning widgets.
+
 - **Security & Offline Reliability:**
-  - Local authentication with encrypted credentials (`bcryptjs`).
+  - Local authentication with independent username and password update controls (`bcryptjs`).
   - Embedded high-speed SQLite database engine (`better-sqlite3` with WAL mode enabled).
   - 1-Click full database export/backup (`.db` format).
   - Zero external server or active internet connection required.
@@ -32,11 +60,12 @@ A robust, standalone, and 100% offline Windows Desktop Point of Sale (POS) and I
 
 ## Tech Stack
 
-- **Frontend:** React 18 (Vite), Tailwind CSS, Lucide Icons, Recharts
-- **Desktop Runtime:** Electron.js (Context Isolation & Secure IPC Architecture)
-- **Local Storage Engine:** SQLite via `better-sqlite3`
-- **PDF Engine:** `jsPDF` & `jspdf-autotable`
-- **CI/CD & Packaging:** GitHub Actions + `electron-builder`
+- **Frontend:** React 18 (Vite), Tailwind CSS, Lucide Icons, Recharts[cite: 1]
+- **Desktop Runtime:** Electron.js (Context Isolation, Non-blocking UI, & Secure IPC Architecture)[cite: 1]
+- **Local Storage Engine:** SQLite via `better-sqlite3`[cite: 1]
+- **PDF & QR Engine:** `jsPDF`, `jspdf-autotable`, & `qrcode`[cite: 1]
+- **Spreadsheet Processing:** `xlsx` (SheetJS)
+- **CI/CD & Packaging:** GitHub Actions + `@electron/rebuild` + `electron-builder`[cite: 1]
 
 ---
 
@@ -63,13 +92,15 @@ inventory-app/
 │   │   ├── Sidebar.jsx           # Sidebar navigation (with Shop Name & Settings link)
 │   │   └── StatCard.jsx          # Analytics metric card
 │   ├── pages/
-│   │   ├── Analytics.jsx         # Sales dashboard & Recharts visualization
-│   │   ├── CustomerKhata.jsx     # Borrowed (Udhaar) customers section
-│   │   ├── Inventory.jsx         # Stock management & Add Category modal
+│   │   ├── Analytics.jsx         # Financial analytics, true profit & near-expiry alerts
+│   │   ├── CustomerKhata.jsx     # Customer credit / Udhaar ledger & settlement
+│   │   ├── DayEndRegister.jsx    # Cash drawer reconciliation & daily shift closing
+│   │   ├── Expenses.jsx          # Store operational expense tracker
+│   │   ├── Inventory.jsx         # Products, brands, medicine salts, categories & Excel import/export
 │   │   ├── Login.jsx             # Admin authentication portal
-│   │   ├── POS.jsx               # Table list billing, barcode, Cart, PDF, WhatsApp & Done
-│   │   ├── ReorderList.jsx       # Vendor list with custom item addition
-│   │   └── Settings.jsx          # Shop name, owner details, GSTIN & receipt setup
+│   │   ├── POS.jsx               # Billing, GST toggle, dynamic UPI QR, cart & Udhaar options
+│   │   ├── ReorderList.jsx       # Vendor procurement list with custom item-to-stock transfer
+│   │   └── Settings.jsx          # Shop name, owner details, GSTIN, UPI ID & admin security
 │   ├── utils/
 │   │   ├── invoicePdf.js         # Thermal receipt PDF generator
 │   │   └── whatsapp.js           # WhatsApp invoice link generator
@@ -161,7 +192,7 @@ All store data (inventory items, prices, bills, transactions, and user credentia
 
 ## Complete Uninstallation
 To cleanly remove the application and wipe all local databases and caches:
-  * Uninstall Retail POS & Inventory via Windows Settings > Installed Apps (or Control Panel).
+  * Uninstall Smart Store via Windows Settings > Installed Apps (or Control Panel).
   * Open Windows Run (Win + R), type %appdata%, and press Enter.
   * Permanently delete the retail-pos-inventory directory.
 
